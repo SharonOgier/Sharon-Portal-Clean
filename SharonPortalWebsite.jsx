@@ -1682,6 +1682,28 @@ export default function AccountingPortalPrototype() {
   );
 
   // Build self-contained HTML email body -- no logo, no interactive buttons
+  let paypalCheckoutUrl = emailDocumentRecord?.paypalCheckoutUrl || profile?.paypalPaymentLink || "";
+
+  if (
+    documentType === "invoice" &&
+    !paypalCheckoutUrl &&
+    typeof createPaypalCheckoutForInvoice === "function" &&
+    safeNumber(emailDocumentRecord?.total ?? emailDocumentRecord?.grandTotal ?? 0) > 0
+  ) {
+    try {
+      paypalCheckoutUrl = await createPaypalCheckoutForInvoice(emailDocumentRecord);
+
+      if (paypalCheckoutUrl) {
+        emailDocumentRecord = {
+          ...emailDocumentRecord,
+          paypalCheckoutUrl,
+        };
+      }
+    } catch (e) {
+      console.error("EMAIL PAYPAL LINK ERROR:", e);
+    }
+  }
+
   const emailClient = getClientById(emailDocumentRecord?.clientId);
   const emailLineItems = emailDocumentRecord?.lineItems || [];
   const hasLines = emailLineItems.length > 0;
@@ -3111,6 +3133,77 @@ export default function AccountingPortalPrototype() {
     return data.url;
     };
 
+
+    const createPaypalCheckoutForInvoice = async (invoice) => {
+    const serverBaseUrl = getApiBaseUrl(profile?.stripeServerUrl);
+    const selectedClient = getClientById(invoice?.clientId) || {};
+
+    const rawTotal = safeNumber(
+      invoice?.total ?? invoice?.grandTotal ?? invoice?.invoiceTotal ?? invoice?.amount ?? 0
+    );
+
+    if (!Number.isFinite(rawTotal) || rawTotal <= 0) {
+      console.error("PayPal invoice total could not be resolved", { invoice, rawTotal });
+      throw new Error(
+        `Invoice total could not be determined for ${invoice?.invoiceNumber || invoice?.id}. Please open and re-save the invoice.`
+      );
+    }
+
+    const payload = {
+      invoiceId: invoice?.id,
+      invoiceNumber: invoice?.invoiceNumber,
+      clientId: invoice?.clientId,
+      customerName: selectedClient?.name || selectedClient?.businessName || "",
+      customerEmail: selectedClient?.email || "",
+      description:
+        invoice?.description ||
+        `Invoice ${invoice?.invoiceNumber || invoice?.id || ""}`,
+      currency: String(invoice?.currencyCode || "AUD").toUpperCase(),
+      amount: Number(rawTotal.toFixed(2)),
+      total: Number(rawTotal.toFixed(2)),
+      successUrl: `${window.location.origin}?paypal=success&invoice=${encodeURIComponent(
+        invoice?.invoiceNumber || ""
+      )}&invoiceId=${encodeURIComponent(String(invoice?.id || ""))}`,
+      cancelUrl: `${window.location.origin}?paypal=cancel&invoice=${encodeURIComponent(
+        invoice?.invoiceNumber || ""
+      )}&invoiceId=${encodeURIComponent(String(invoice?.id || ""))}`,
+    };
+
+    let response;
+
+    try {
+      response = await fetch(`${serverBaseUrl}/api/create-paypal-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error("PAYPAL CHECKOUT NETWORK ERROR:", {
+        serverBaseUrl,
+        error,
+      });
+      throw new Error(
+        `Could not reach the PayPal server at ${serverBaseUrl}. Check your backend deployment.`
+      );
+    }
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("PayPal checkout response error", data);
+      throw new Error(data?.error || "PayPal checkout failed");
+    }
+
+    const checkoutUrl = data?.url || data?.approvalUrl || data?.checkoutUrl || data?.links?.find?.((l) => l.rel === "approve")?.href || "";
+
+    if (!checkoutUrl) {
+      throw new Error("PayPal checkout URL was not returned");
+    }
+
+    return checkoutUrl;
+    };
+
+
     const payInvoiceWithStripe = async (invoice) => {
     try {
       const checkoutUrl = await createStripeCheckoutForInvoice(invoice);
@@ -3191,7 +3284,19 @@ export default function AccountingPortalPrototype() {
       console.error("STRIPE PREVIEW ERROR:", error);
     }
 
-    writeInvoicePreviewToWindow(w, previewInvoice, stripeCheckoutUrl, { allowEmail: true }, { profile, clients });
+    let paypalCheckoutUrl = previewInvoice.paypalCheckoutUrl || "";
+    try {
+      if (!paypalCheckoutUrl && safeNumber(previewInvoice.total ?? previewInvoice.grandTotal ?? 0) > 0) {
+        paypalCheckoutUrl = await createPaypalCheckoutForInvoice(previewInvoice);
+        if (paypalCheckoutUrl) {
+          previewInvoice = { ...previewInvoice, paypalCheckoutUrl };
+        }
+      }
+    } catch (error) {
+      console.error("PAYPAL PREVIEW ERROR:", error);
+    }
+
+    writeInvoicePreviewToWindow(w, previewInvoice, stripeCheckoutUrl, { allowEmail: true, paypalCheckoutUrl }, { profile, clients });
     w.simulateInvoicePayment = () => simulateInvoicePayment(invoice.id);
     };
 
@@ -3239,7 +3344,16 @@ export default function AccountingPortalPrototype() {
       stripeCheckoutUrl,
     };
 
-    writeInvoicePreviewToWindow(w, previewInvoiceWithStripe, stripeCheckoutUrl, { allowEmail: true }, { profile, clients });
+    let paypalCheckoutUrlPreview = "";
+    try {
+      if (safeNumber(previewInvoiceWithStripe.total ?? previewInvoiceWithStripe.grandTotal ?? 0) > 0) {
+        paypalCheckoutUrlPreview = await createPaypalCheckoutForInvoice(previewInvoiceWithStripe);
+      }
+    } catch (error) {
+      console.error("PAYPAL PREVIEW ERROR:", error);
+    }
+
+    writeInvoicePreviewToWindow(w, previewInvoiceWithStripe, stripeCheckoutUrl, { allowEmail: true, paypalCheckoutUrl: paypalCheckoutUrlPreview }, { profile, clients });
     w.simulateInvoicePayment = () => simulateInvoicePayment(previewInvoice.id);
     };
 

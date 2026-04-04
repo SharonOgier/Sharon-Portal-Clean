@@ -395,7 +395,7 @@ export function buildQuoteHtml(quote, options = {}, ctx = {}) {
   const gstAppliesToClient = (id) => Boolean(profile.gstRegistered) && !clientIsGstExempt(id);
   const getDocumentBusinessName = () => profile.hideLegalNameOnDocs || !profile.legalBusinessName ? profile.businessName : profile.legalBusinessName;
   const getDocumentAddress = () => profile.hideAddressOnDocs ? "" : profile.address || "";
-const { allowEmail = false } = options;
+const { allowEmail = false, paypalCheckoutUrl = "" } = options;
 const qClient = getClientById(quote.clientId);
 const currencyCode = quote.currencyCode || getClientCurrencyCode(qClient);
 const money = (value) => formatCurrencyByCode(value, currencyCode);
@@ -820,7 +820,9 @@ ${purchaseOrderBlock}
 <div style="margin-top:10px; font-size:13px; color:#555;">
   Please use reference: ${paymentReference}
 </div>
-${stripeCheckoutUrl || profile.paypalPaymentLink
+${(() => {
+    const resolvedPaypalUrl = paypalCheckoutUrl || profile.paypalPaymentLink || "";
+    return (stripeCheckoutUrl || resolvedPaypalUrl)
     ? `<div style="margin-top:16px; padding:14px; border:1px solid #E2E8F0; border-radius:12px; background:#F7F6F5;">
         <div style="font-weight:700; color:#14202B; margin-bottom:8px;">Pay Online</div>
         <div style="font-size:13px; color:#555; margin-bottom:10px;">Choose your preferred payment method below.</div>
@@ -828,13 +830,13 @@ ${stripeCheckoutUrl || profile.paypalPaymentLink
       ? `<a href="${stripeCheckoutUrl}" target="_blank" rel="noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
       : ""
     }
-        ${profile.paypalPaymentLink
-      ? `<a href="${profile.paypalPaymentLink}" target="_blank" rel="noreferrer" style="display:inline-block; background:#0070BA; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with PayPal</a>`
+        ${resolvedPaypalUrl
+      ? `<a href="${resolvedPaypalUrl}" target="_blank" rel="noreferrer" style="display:inline-block; background:#0070BA; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with PayPal</a>`
       : ""
     }
       </div>`
-    : ""
-  }
+    : "";
+  })()}
 </div>
 
 <div class="footer">
