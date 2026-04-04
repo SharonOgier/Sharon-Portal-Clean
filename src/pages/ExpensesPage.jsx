@@ -267,7 +267,7 @@ export default function ExpensesPage(props) {
                             }
                            </div>`
                         : "";
-                      w.document.write(`<!doctype html>
+                      const htmlContent = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8"/>
@@ -312,8 +312,11 @@ export default function ExpensesPage(props) {
 </div>
 <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
 </body>
-</html>`);
-                      w.document.close();
+</html>`;
+                      const blob = new Blob([htmlContent], { type: "text/html" });
+                      const blobUrl = URL.createObjectURL(blob);
+                      w.location.href = blobUrl;
+                      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
                     }}
                   >
                     Preview &amp; Print

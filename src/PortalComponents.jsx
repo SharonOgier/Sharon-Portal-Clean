@@ -72,7 +72,7 @@ export function ToastContainer({ toasts, onRemove }) {
           <button onClick={() => onRemove(t.id)} style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: 18, lineHeight: 1, color: "#64748B", padding: 0, marginTop: -1,
-          }}>×</button>
+          }}>x</button>
         </div>
       ))}
     </div>
@@ -95,9 +95,9 @@ export function useToast() {
   };
   return { toasts, toast, removeToast: remove };
 }
-// ────────────────────────────────────────────────────────────
+// ------------------------------------------------------------
 
-// ── Confirm Modal ────────────────────────────────────────────
+// -- Confirm Modal --------------------------------------------
 function ConfirmModal({ isOpen, title, message, confirmLabel = "Delete", onConfirm, onCancel }) {
   if (!isOpen) return null;
   return (
@@ -126,9 +126,9 @@ export function useConfirm() {
   ) : null;
   return { confirm, modal };
 }
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
-// ── Subscription helpers (imported from PortalHelpers) ───────────────────────
+// -- Subscription helpers (imported from PortalHelpers) -----------------------
 
 export function PaywallScreen({ profile, serverBaseUrl }) {
   const [loading, setLoading] = React.useState(false);
@@ -165,7 +165,7 @@ export function PaywallScreen({ profile, serverBaseUrl }) {
           </div>
           {error && <div style={{ background: "#FEE2E2", color: "#991B1B", borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: 13 }}>{error}</div>}
           <button onClick={handleSubscribe} disabled={loading} style={{ width: "100%", background: loading ? "#9CA3AF" : "#6A1B9A", color: "#fff", border: "none", borderRadius: 12, padding: "14px 20px", fontSize: 16, fontWeight: 800, cursor: loading ? "not-allowed" : "pointer" }}>
-            {loading ? "Redirecting to checkout..." : "Subscribe now — $" + DEFAULT_MONTHLY_SUBSCRIPTION + "/month"}
+            {loading ? "Redirecting to checkout..." : "Subscribe now -- $" + DEFAULT_MONTHLY_SUBSCRIPTION + "/month"}
           </button>
           <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 14 }}>Secure payment via Stripe · Cancel anytime</div>
         </div>
@@ -176,7 +176,7 @@ export function PaywallScreen({ profile, serverBaseUrl }) {
     </div>
   );
 }
-// ─────────────────────────────────────────────────────────────
+// -------------------------------------------------------------
 
 export function SectionCard({ title, children, right }) {
   return (
@@ -777,7 +777,7 @@ export function ExpenseTypeModal({
                     style={buttonSecondary}
                     onClick={() => {
                       const previewUrl = URL.createObjectURL(receiptFile);
-                      const previewWindow = window.open(previewUrl, "_blank");
+                      const previewWindow = window.open(previewUrl, "_blank", "noopener,noreferrer");
                       setTimeout(() => URL.revokeObjectURL(previewUrl), 60000);
                       if (!previewWindow) {
                         toast.warning("Preview popup was blocked by your browser.");
@@ -1013,6 +1013,6 @@ export function IncomeSourceModal({
 }
 
 
-// ── Document builder functions (top-level for correct scope access) ──────────
+// -- Document builder functions (top-level for correct scope access) ----------
 
 

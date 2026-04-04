@@ -943,7 +943,7 @@ export default function AccountingPortalPrototype() {
       if (error) throw error;
       setShowResetSentModal(true);
     } catch (error) {
-      console.error("SUPABASE PASSWORD RESET ERROR:", error);
+      console.error("SUPABASE PASSWORD RESET ERROR:", error?.message || "Unknown error");
       toast.error(error.message || "Password reset failed");
     }
   };
