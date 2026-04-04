@@ -98,7 +98,7 @@ const paypalBaseUrl = process.env.PAYPAL_ENV === "live"
   : "https://api-m.sandbox.paypal.com";
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 app.use("/api/stripe-webhook", express.raw({ type: "application/json" }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use((err, req, res, next) => {
   if (err.type === "entity.parse.failed") {
     console.error("[JSON PARSE ERROR]", err.message);
@@ -106,7 +106,7 @@ app.use((err, req, res, next) => {
   }
   next(err);
 });
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 if (fs.existsSync(distPath)) {
   app.use(
@@ -144,7 +144,7 @@ function rateLimit({ windowMs = 60000, max = 20, keyFn } = {}) {
     if (entry.count >= max) {
       const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
       res.set("Retry-After", retryAfter);
-      return res.status(429).json({ ok: false, error: "Too many requests — please slow down and try again shortly." });
+      return res.status(429).json({ ok: false, error: "Too many requests -- please slow down and try again shortly." });
     }
 
     entry.count += 1;
@@ -159,33 +159,35 @@ setInterval(() => {
   }
 }, 5 * 60_000);
 
-// ── Security headers ───────────────────────────────────────────
+// -- Security headers -------------------------------------------
 app.use((req, res, next) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.set("X-Frame-Options", "DENY");
   res.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.set("X-XSS-Protection", "1; mode=block");
+  res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none';");
   if (req.path.startsWith("/api/")) {
     res.set("Cache-Control", "no-store");
   }
   next();
 });
 
-// ── General API: 60 requests per minute per IP ────────────────
+// -- General API: 60 requests per minute per IP ----------------
 app.use("/api/", rateLimit({ windowMs: 60_000, max: 60 }));
 
-// ── Email endpoints: max 5 per 10 minutes per IP ──────────────
+// -- Email endpoints: max 5 per 10 minutes per IP --------------
 const emailRateLimit = rateLimit({ windowMs: 10 * 60_000, max: 5 });
 app.use("/api/send-document-email", emailRateLimit);
 app.use("/api/send-invoice-attachment-email", emailRateLimit);
 
-// ── Stripe checkout: max 10 per 10 minutes per IP ─────────────
+// -- Stripe checkout: max 10 per 10 minutes per IP -------------
 const stripeRateLimit = rateLimit({ windowMs: 10 * 60_000, max: 10 });
 app.use("/api/create-checkout-session", stripeRateLimit);
 app.use("/api/create-subscription-checkout", stripeRateLimit);
 app.use("/api/create-paypal-order", rateLimit({ windowMs: 10 * 60_000, max: 10 }));
 
-// ── PDF generation: max 20 per minute per IP ─────────────────
+// -- PDF generation: max 20 per minute per IP -----------------
 app.use("/api/test-pdf", rateLimit({ windowMs: 60_000, max: 20 }));
 
 function safeNumber(value) {
@@ -715,22 +717,20 @@ app.get("/health", async (_req, res) => {
     message: `Server running on port ${PORT}`,
     resendConfigured: !!resendApiKey,
     stripeConfigured: !!stripeSecretKey,
-    chromeExecutable: browserDiagnostics.launchExecutablePath,
-    browser: browserDiagnostics,
-    paths: {
-      __dirname,
-      distPath,
-      distExists: fs.existsSync(distPath),
-      distIndexExists: fs.existsSync(distIndexPath),
-      publicPath,
-      publicExists: fs.existsSync(publicPath),
-      landingPath,
-      landingExists: fs.existsSync(landingPath),
-    },
+    paypalConfigured: !!(paypalClientId && paypalClientSecret),
+    supabaseConfigured: !!supabase,
+    chromeAvailable: !!browserDiagnostics.launchExecutablePath,
+    distExists: fs.existsSync(distPath),
+    landingExists: fs.existsSync(landingPath),
   });
 });
 
-app.get("/api/debug-browser", async (_req, res) => {
+app.get("/api/debug-browser", async (req, res) => {
+  // Only allow from localhost to prevent leaking server internals
+  const host = req.hostname || "";
+  if (host !== "localhost" && host !== "127.0.0.1") {
+    return res.status(403).json({ ok: false, error: "Forbidden." });
+  }
   try {
     return res.json({ ok: true, diagnostics: await getBrowserDiagnostics() });
   } catch (error) {
@@ -768,8 +768,6 @@ app.get("/api/test-pdf", async (_req, res) => {
       ok: false,
       error: "PDF test failed.",
       details: error.message,
-      stack: error.stack,
-      browser: await getBrowserDiagnostics(),
     });
   }
 });
@@ -906,13 +904,12 @@ app.post("/api/create-checkout-session", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "Stripe checkout failed.",
-      details: error.message,
     });
   }
 });
 
 
-// ── PayPal order creation ─────────────────────────────────────
+// -- PayPal order creation -------------------------------------
 app.post("/api/create-paypal-order", async (req, res) => {
   try {
     if (!paypalClientId || !paypalClientSecret) {
@@ -1029,7 +1026,7 @@ app.post("/api/create-paypal-order", async (req, res) => {
     if (!orderResponse.ok) {
       const orderError = await orderResponse.text();
       console.error("PayPal order creation failed:", orderError);
-      return res.status(500).json({ ok: false, error: "PayPal order creation failed.", details: orderError });
+      return res.status(500).json({ ok: false, error: "PayPal order creation failed." });
     }
 
     const order = await orderResponse.json();
@@ -1051,7 +1048,6 @@ app.post("/api/create-paypal-order", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: "PayPal order creation failed.",
-      details: error.message,
     });
   }
 });
@@ -1133,7 +1129,6 @@ app.post("/api/send-document-email", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: error?.message || "Failed to send document email.",
-      details: error?.stack || null,
     });
   }
 });
@@ -1226,7 +1221,7 @@ app.post("/api/create-subscription-checkout", async (req, res) => {
     return res.json({ ok: true, url: session.url });
   } catch (error) {
     console.error("Subscription checkout failed:", error);
-    return res.status(500).json({ ok: false, error: "Could not create subscription checkout.", details: error.message });
+    return res.status(500).json({ ok: false, error: "Could not create subscription checkout." });
   }
 });
 
@@ -1251,7 +1246,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
       const invoiceId = session?.metadata?.invoiceId || "";
       const subscriptionType = session?.metadata?.type || "";
 
-      // ── Portal subscription checkout ──────────────────────
+      // -- Portal subscription checkout ----------------------
       if (subscriptionType === "portal_subscription" && supabase) {
         const userId = session?.metadata?.userId || "";
         const subscriptionId = session?.subscription || "";
@@ -1283,7 +1278,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
         }
       }
 
-      // ── Invoice payment checkout ───────────────────────────
+      // -- Invoice payment checkout ---------------------------
       if (invoiceId && supabase) {
         try {
           const { data: existing, error: fetchError } = await supabase
@@ -1316,7 +1311,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
       }
     }
 
-    // ── Subscription updated / cancelled ──────────────────────
+    // -- Subscription updated / cancelled ----------------------
     if (
       (event.type === "customer.subscription.updated" ||
        event.type === "customer.subscription.deleted") &&
@@ -1344,7 +1339,7 @@ app.post("/api/stripe-webhook", async (req, res) => {
             .from("sas_profile")
             .update({ data: updatedData, updated_at: new Date().toISOString() })
             .eq("id", row.id);
-          console.log(`Subscription ${subscriptionId} status → ${newStatus}`);
+          console.log(`Subscription ${subscriptionId} status -> ${newStatus}`);
         }
       } catch (dbError) {
         console.error("Failed to update subscription status from webhook:", dbError);
@@ -1379,12 +1374,11 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({
     ok: false,
     error: error?.message || "An unexpected server error occurred.",
-    details: error?.stack || null,
   });
 });
 
-// ── Overdue Invoice Reminder Cron ─────────────────────────────
-// Runs every 24 hours — emails clients with invoices 1+ days overdue
+// -- Overdue Invoice Reminder Cron -----------------------------
+// Runs every 24 hours -- emails clients with invoices 1+ days overdue
 const SHARON_EMAIL = process.env.SHARON_EMAIL || "info@sharonogier.com";
 
 async function sendOverdueReminders() {
@@ -1457,12 +1451,12 @@ async function sendOverdueReminders() {
       const html = `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#14202B;">
           <h2 style="color:#6A1B9A;">Payment Reminder</h2>
-          <p>Dear ${client.name || "Valued Client"},</p>
+          <p>Dear ${escapeHtml(client.name || "Valued Client")},</p>
           <p>This is a friendly reminder that the following invoice is now overdue:</p>
           <table style="width:100%;border-collapse:collapse;margin:20px 0;">
             <tr style="background:#F5ECFB;">
               <td style="padding:12px;font-weight:700;">Invoice Number</td>
-              <td style="padding:12px;">${inv.invoiceNumber || "N/A"}</td>
+              <td style="padding:12px;">${escapeHtml(inv.invoiceNumber || "N/A")}</td>
             </tr>
             <tr>
               <td style="padding:12px;font-weight:700;">Amount Due</td>
@@ -1472,13 +1466,13 @@ async function sendOverdueReminders() {
               <td style="padding:12px;font-weight:700;">Due Date</td>
               <td style="padding:12px;color:#991B1B;">${dueDateFmt} (overdue by ${diffDays} day${diffDays !== 1 ? "s" : ""})</td>
             </tr>
-            ${inv.description ? `<tr><td style="padding:12px;font-weight:700;">Description</td><td style="padding:12px;">${inv.description}</td></tr>` : ""}
+            ${inv.description ? `<tr><td style="padding:12px;font-weight:700;">Description</td><td style="padding:12px;">${escapeHtml(inv.description)}</td></tr>` : ""}
           </table>
           <p>Please arrange payment at your earliest convenience. If you have already made payment, please disregard this reminder.</p>
           <p>If you have any queries, please don't hesitate to contact us.</p>
           <br/>
           <p style="color:#64748B;font-size:13px;">
-            ${businessName}<br/>
+            ${escapeHtml(businessName)}<br/>
             ${abn ? "ABN: " + abn + "<br/>" : ""}
             ${SHARON_EMAIL}
           </p>
@@ -1489,7 +1483,7 @@ async function sendOverdueReminders() {
         from: EMAIL_FROM,
         to: [client.email],
         cc: [SHARON_EMAIL],
-        subject: `Payment Reminder — Invoice ${inv.invoiceNumber || ""} overdue ${amount}`,
+        subject: `Payment Reminder -- Invoice ${inv.invoiceNumber || ""} overdue ${amount}`,
         html,
       });
 
@@ -1503,7 +1497,7 @@ async function sendOverdueReminders() {
       console.log(`[cron] Reminder sent for invoice ${inv.invoiceNumber} to ${client.email}`);
     }
 
-    console.log(`[cron] Done — ${sent} reminder${sent !== 1 ? "s" : ""} sent`);
+    console.log(`[cron] Done -- ${sent} reminder${sent !== 1 ? "s" : ""} sent`);
   } catch (err) {
     console.error("[cron] Overdue reminder error:", err.message || err);
   }
@@ -1521,5 +1515,5 @@ app.listen(PORT, () => {
     .catch((error) => console.error("Chromium diagnostics failed:", error));
   if (!stripeSecretKey) console.warn("WARNING: STRIPE_SECRET_KEY is not set.");
   if (!resendApiKey) console.warn("WARNING: RESEND_API_KEY is not set.");
-  if (!paypalClientId || !paypalClientSecret) console.warn("WARNING: PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not set — PayPal payments disabled.");
+  if (!paypalClientId || !paypalClientSecret) console.warn("WARNING: PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET not set -- PayPal payments disabled.");
 });

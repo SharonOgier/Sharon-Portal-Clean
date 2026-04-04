@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React from "react";
 
 // -----------------------------------------------------------------------------
 // IncomeSourcesPage
@@ -7,7 +7,7 @@ import React, { useState, useMemo } from "react";
 
 export default function IncomeSourcesPage(props) {
   const {
-    incomeSources,
+    incomeSources = [],
     showIncomeSourceModal,
     setShowIncomeSourceModal,
     incomeSourceForm,
@@ -108,7 +108,7 @@ export default function IncomeSourcesPage(props) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
               <div>
                 <label style={labelStyle}>Name</label>
-                <input style={inputStyle} value={incomeSourceEditorForm.name || ""} onChange={(e) => setIncomeSourceEditorForm((prev) => ({ ...prev, name: e.target.value }))} />
+                <input style={inputStyle} maxLength={120} value={incomeSourceEditorForm.name || ""} onChange={(e) => setIncomeSourceEditorForm((prev) => ({ ...prev, name: e.target.value }))} />
               </div>
               <div>
                 <label style={labelStyle}>Income Type</label>

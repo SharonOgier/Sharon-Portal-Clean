@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React from "react";
 
 // -----------------------------------------------------------------------------
 // QuotesPage
@@ -71,6 +71,25 @@ export default function QuotesPage(props) {
     openQuotePreview,
   } = props;
 
+    const createLocalId = () => {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+      return `quote-line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    };
+    const normalisedClientSearch = String(quoteClientSearch || "").toLowerCase().trim();
+    const matchingClients = clients.filter((c) =>
+      String(c?.name || "").toLowerCase().includes(normalisedClientSearch) ||
+      String(c?.businessName || "").toLowerCase().includes(normalisedClientSearch)
+    );
+    const sendQuoteEmail = (quoteId) => {
+      if (typeof sendQuoteFromPreview === "function") {
+        sendQuoteFromPreview(quoteId);
+        return;
+      }
+      if (typeof window !== "undefined" && typeof window.sendQuoteFromPreview === "function") {
+        window.sendQuoteFromPreview(quoteId);
+      }
+    };
+
     const quoteLines = computeLineItemTotals(quoteForm.lineItems || [], quoteForm.clientId);
     const qSubtotal = quoteLines.reduce((s, l) => s + l.rowSubtotal, 0);
     const qGst = quoteLines.reduce((s, l) => s + l.rowGst, 0);
@@ -142,14 +161,14 @@ export default function QuotesPage(props) {
                   placeholder="Type client name..." />
                 {quoteClientSearch && (
                   <div style={{ border: `1px solid ${colours.border}`, borderRadius: 10, marginTop: 4, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
-                    {clients.filter((c) => c.name.toLowerCase().includes(quoteClientSearch.toLowerCase()) || (c.businessName || "").toLowerCase().includes(quoteClientSearch.toLowerCase()))
+                    {matchingClients
                       .map((c) => (
                         <div key={c.id} onClick={() => { setQuoteForm((p) => ({ ...p, clientId: String(c.id), currencyCode: getClientCurrencyCode(c) })); setQuoteClientSearch(c.name); }}
                           style={{ padding: "10px 14px", cursor: "pointer", fontSize: 14, borderBottom: `1px solid ${colours.border}`, background: String(quoteForm.clientId) === String(c.id) ? colours.lightPurple : "#fff" }}>
                           <strong>{c.name}</strong>{c.businessName ? <span style={{ color: colours.muted }}> -- {c.businessName}</span> : ""}
                         </div>
                       ))}
-                    {clients.filter((c) => c.name.toLowerCase().includes(quoteClientSearch.toLowerCase())).length === 0 && (
+                    {matchingClients.length === 0 && (
                       <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new client below</div>
                     )}
                   </div>
@@ -252,7 +271,7 @@ export default function QuotesPage(props) {
                       if (!svc) return;
                       const exempt = clientIsGstExempt(quoteForm.clientId);
                       const newItem = {
-                        id: Date.now() + Math.random(),
+                        id: createLocalId(),
                         description: svc.name + (svc.description ? " -- " + svc.description : ""),
                         quantity: 1,
                         unitPrice: String(svc.price ?? ""),
@@ -326,7 +345,7 @@ export default function QuotesPage(props) {
                 </table>
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={() => setQuoteForm((prev) => ({ ...prev, lineItems: [...(prev.lineItems || []), { id: Date.now() + Math.random(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" }] }))}
+                <button onClick={() => setQuoteForm((prev) => ({ ...prev, lineItems: [...(prev.lineItems || []), { id: createLocalId(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" }] }))}
                   style={{ ...buttonSecondary, fontSize: 13, padding: "7px 14px" }}>+ Add line</button>
                 <span style={{ fontSize: 13, color: colours.muted }}>{(quoteForm.lineItems || []).length} line{(quoteForm.lineItems || []).length !== 1 ? "s" : ""}</span>
               </div>
@@ -403,7 +422,7 @@ export default function QuotesPage(props) {
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button style={buttonSecondary} onClick={openQuotePreview}>Preview PDF</button>
                   <button style={{ ...buttonSecondary, opacity: savingQuote ? 0.6 : 1 }} disabled={savingQuote} onClick={async () => { setQuoteForm((prev) => ({ ...prev, status: "Draft" })); const ok = await saveQuote(); if (ok) setQuoteWizardStep(1); }}>Save Draft</button>
-                  <button style={{ ...buttonPrimary, opacity: savingQuote ? 0.6 : 1 }} disabled={savingQuote} onClick={async () => { const ok = await saveQuote(); if (ok) setQuoteWizardStep(1); }}>{savingQuote ? "Saving..." : "Save Quote v"}</button>
+                  <button style={{ ...buttonPrimary, opacity: savingQuote ? 0.6 : 1 }} disabled={savingQuote} onClick={async () => { const ok = await saveQuote(); if (ok) setQuoteWizardStep(1); }}>{savingQuote ? "Saving..." : "Save Quote"}</button>
                 </div>
               </div>
             </div>
@@ -445,7 +464,7 @@ export default function QuotesPage(props) {
                     </button>
                     <button
                       style={{ ...buttonSecondary, color: colours.teal, borderColor: colours.teal }}
-                      onClick={() => { if (typeof sendQuoteFromPreview === "function") sendQuoteFromPreview(row.id); else if (window.sendQuoteFromPreview) window.sendQuoteFromPreview(row.id); }}
+                      onClick={() => sendQuoteEmail(row.id)}
                     >
                       Email
                     </button>

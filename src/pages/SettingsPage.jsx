@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SettingsPage
@@ -33,12 +33,49 @@ export default function SettingsPage(props) {
     InsightChip,
     MetricCard,
     SectionCard,
-    DataTable,
+    EmptyState,
     saveProfileToSupabase,
     handleCloseAccount,
     handleSignOut,
-    toast,
+    toast = { success: () => {}, error: () => {} },
+    confirm = ({ onConfirm }) => typeof onConfirm === "function" && onConfirm(),
   } = props;
+
+  const LOGO_PREVIEW_MAX_HEIGHT = 140;
+  const LOGO_PREVIEW_MAX_WIDTH = 320;
+  const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+  const ALLOWED_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+  const fileToDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      if (!file) return reject(new Error("No file selected"));
+      if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+        return reject(new Error("Please upload a PNG, JPG, WEBP or GIF logo."));
+      }
+      if (file.size > MAX_LOGO_BYTES) {
+        return reject(new Error("Logo must be 2 MB or smaller."));
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Unable to read the selected file."));
+      reader.readAsDataURL(file);
+    });
+
+  const normaliseHttpsUrl = (value) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed) return "";
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.protocol === "https:" ? parsed.toString() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const persistProfile = async (nextProfile, successMessage) => {
+    await saveProfileToSupabase(nextProfile);
+    toast.success(successMessage);
+  };
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -101,6 +138,8 @@ export default function SettingsPage(props) {
               <label style={labelStyle}>Email</label>
               <input
                 style={inputStyle}
+                type="email"
+                autoComplete="email"
                 value={profile.email}
                 onChange={(e) => setProfile({ ...profile, email: e.target.value })}
               />
@@ -110,6 +149,8 @@ export default function SettingsPage(props) {
               <label style={labelStyle}>Phone</label>
               <input
                 style={inputStyle}
+                type="tel"
+                autoComplete="tel"
                 value={profile.phone}
                 onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
               />
@@ -126,8 +167,10 @@ export default function SettingsPage(props) {
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <button style={buttonPrimary} onClick={async () => {
                 try {
-                  await saveProfileToSupabase(profile);
-                  toast.success("Profile saved!");
+                  if (profile.email && typeof isValidEmail === "function" && !isValidEmail(profile.email)) {
+                    throw new Error("Please enter a valid email address.");
+                  }
+                  await persistProfile(profile, "Profile saved!");
                 } catch (err) { toast.error(err.message || "Failed to save profile"); }
               }}>Save Profile</button>
             </div>
@@ -216,8 +259,10 @@ export default function SettingsPage(props) {
               <label style={labelStyle}>BSB</label>
               <input
                 style={inputStyle}
+                inputMode="numeric"
+                maxLength={7}
                 value={profile.bsb}
-                onChange={(e) => setProfile({ ...profile, bsb: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, bsb: e.target.value.replace(/[^\d-]/g, "").slice(0, 7) })}
               />
             </div>
 
@@ -225,8 +270,10 @@ export default function SettingsPage(props) {
               <label style={labelStyle}>Account Number</label>
               <input
                 style={inputStyle}
+                inputMode="numeric"
+                maxLength={12}
                 value={profile.accountNumber}
-                onChange={(e) => setProfile({ ...profile, accountNumber: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, accountNumber: e.target.value.replace(/\D/g, "").slice(0, 12) })}
               />
             </div>
 
@@ -234,8 +281,9 @@ export default function SettingsPage(props) {
               <label style={labelStyle}>PayID</label>
               <input
                 style={inputStyle}
+                autoComplete="off"
                 value={profile.payId}
-                onChange={(e) => setProfile({ ...profile, payId: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, payId: e.target.value.trimStart() })}
               />
             </div>
 
@@ -274,8 +322,25 @@ export default function SettingsPage(props) {
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <button style={buttonPrimary} onClick={async () => {
                 try {
-                  await saveProfileToSupabase(profile);
-                  toast.success("Financial settings saved!");
+                  const stripeServerUrl = normaliseHttpsUrl(profile.stripeServerUrl);
+                  if (profile.stripeServerUrl && !stripeServerUrl) {
+                    throw new Error("Stripe Server URL must be a valid HTTPS URL.");
+                  }
+                  if (profile.paypalBusinessEmail && typeof isValidEmail === "function" && !isValidEmail(profile.paypalBusinessEmail)) {
+                    throw new Error("Please enter a valid PayPal business email.");
+                  }
+                  const stripePaymentLink = normaliseHttpsUrl(profile.stripePaymentLink);
+                  if (profile.stripePaymentLink && !stripePaymentLink) {
+                    throw new Error("Stripe Payment Link must be a valid HTTPS URL.");
+                  }
+                  const sanitisedProfile = {
+                    ...profile,
+                    stripeServerUrl,
+                    stripePaymentLink,
+                    paypalBusinessEmail: String(profile.paypalBusinessEmail || "").trim(),
+                  };
+                  setProfile(sanitisedProfile);
+                  await persistProfile(sanitisedProfile, "Financial settings saved!");
                 } catch (err) { toast.error(err.message || "Failed to save settings"); }
               }}>Save Financial Settings</button>
             </div>
@@ -291,15 +356,18 @@ export default function SettingsPage(props) {
                 accept="image/*"
                 style={inputStyle}
                 onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const dataUrl = await fileToDataUrl(file);
-                  const updated = { ...profile, logoFileName: file.name, logoDataUrl: dataUrl };
-                  setProfile(updated);
                   try {
-                    await saveProfileToSupabase(updated);
-                    toast.success("Logo saved!");
-                  } catch (err) { toast.error("Logo uploaded but failed to save — click Save Branding"); }
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const dataUrl = await fileToDataUrl(file);
+                    const updated = { ...profile, logoFileName: file.name, logoDataUrl: dataUrl };
+                    setProfile(updated);
+                    await persistProfile(updated, "Logo saved!");
+                  } catch (err) {
+                    toast.error(err.message || "Logo uploaded but failed to save.");
+                  } finally {
+                    e.target.value = "";
+                  }
                 }}
               />
             </div>
@@ -353,8 +421,7 @@ export default function SettingsPage(props) {
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
               <button style={buttonPrimary} onClick={async () => {
                 try {
-                  await saveProfileToSupabase(profile);
-                  toast.success("Branding saved!");
+                  await persistProfile(profile, "Branding saved!");
                 } catch (err) { toast.error(err.message || "Failed to save branding"); }
               }}>
                 Save Branding

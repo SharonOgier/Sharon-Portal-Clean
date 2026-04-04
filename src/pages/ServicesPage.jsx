@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ServicesPage
@@ -7,7 +7,7 @@ import React, { useState, useMemo } from "react";
 
 export default function ServicesPage(props) {
   const {
-    services,
+    services = [],
     serviceSearch,
     setServiceSearch,
     showServiceModal,
@@ -39,8 +39,9 @@ export default function ServicesPage(props) {
     handleServiceFormChange,
   } = props;
 
+    const normalisedServiceSearch = String(serviceSearch || "").toLowerCase().trim();
     const filteredServices = services.filter((service) =>
-      service.name.toLowerCase().includes(serviceSearch.toLowerCase())
+      String(service?.name || "").toLowerCase().includes(normalisedServiceSearch)
     );
     const totalServiceValue = services.reduce((s, svc) => s + safeNumber(svc.total || svc.price), 0);
     const gstServices = services.filter((s) => s.gstType === "GST on Income (10%)");
@@ -163,6 +164,10 @@ export default function ServicesPage(props) {
                   <label style={labelStyle}>Price</label>
                   <input
                     style={inputStyle}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
                     value={serviceForm.price}
                     onChange={(e) => handleServiceFormChange("price", e.target.value)}
                   />
@@ -193,7 +198,14 @@ export default function ServicesPage(props) {
                   style={buttonSecondary}
                   onClick={() => {
                     setShowServiceModal(false);
-                    resetServiceForm();
+                    setServiceForm({
+                      name: "",
+                      description: "",
+                      price: "",
+                      gstType: "GST on Income (10%)",
+                      gst: "",
+                      total: "",
+                    });
                   }}
                 >
                   Cancel

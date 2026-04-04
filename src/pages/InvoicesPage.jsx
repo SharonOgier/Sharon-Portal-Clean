@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React from "react";
 
 // -----------------------------------------------------------------------------
 // InvoicesPage
@@ -84,7 +84,26 @@ export default function InvoicesPage(props) {
     sendInvoiceFromPreview,
   } = props;
 
-  const blankLineItem = () => ({ id: Date.now() + Math.random(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" });
+  const createLocalId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    return `inv-line-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  };
+
+  const blankLineItem = () => ({ id: createLocalId(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" });
+  const normalisedClientSearch = String(invClientSearch || "").toLowerCase().trim();
+  const matchingClients = clients.filter((c) =>
+    String(c?.name || "").toLowerCase().includes(normalisedClientSearch) ||
+    String(c?.businessName || "").toLowerCase().includes(normalisedClientSearch)
+  );
+  const sendInvoiceEmail = (invoiceId) => {
+    if (typeof sendInvoiceFromPreview === "function") {
+      sendInvoiceFromPreview(invoiceId);
+      return;
+    }
+    if (typeof window !== "undefined" && typeof window.sendInvoiceFromPreview === "function") {
+      window.sendInvoiceFromPreview(invoiceId);
+    }
+  };
 
     const invLines = computeLineItemTotals(invoiceForm.lineItems || [], invoiceForm.clientId);
     const previewSubtotal = invLines.reduce((s, l) => s + l.rowSubtotal, 0);
@@ -161,14 +180,14 @@ export default function InvoicesPage(props) {
                   placeholder="Type client name..." />
                 {invClientSearch && (
                   <div style={{ border: `1px solid ${colours.border}`, borderRadius: 10, marginTop: 4, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
-                    {clients.filter((c) => c.name.toLowerCase().includes(invClientSearch.toLowerCase()) || (c.businessName || "").toLowerCase().includes(invClientSearch.toLowerCase()))
+                    {matchingClients
                       .map((c) => (
                         <div key={c.id} onClick={() => { setInvoiceForm((p) => ({ ...p, clientId: String(c.id), currencyCode: getClientCurrencyCode(c) })); setInvClientSearch(c.name); }}
                           style={{ padding: "10px 14px", cursor: "pointer", fontSize: 14, borderBottom: `1px solid ${colours.border}`, background: String(invoiceForm.clientId) === String(c.id) ? colours.lightPurple : "#fff" }}>
                           <strong>{c.name}</strong>{c.businessName ? <span style={{ color: colours.muted }}> -- {c.businessName}</span> : ""}
                         </div>
                       ))}
-                    {clients.filter((c) => c.name.toLowerCase().includes(invClientSearch.toLowerCase())).length === 0 && (
+                    {matchingClients.length === 0 && (
                       <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new client below</div>
                     )}
                   </div>
@@ -291,7 +310,7 @@ export default function InvoicesPage(props) {
                       if (!svc) return;
                       const exempt = clientIsGstExempt(invoiceForm.clientId);
                       const newItem = {
-                        id: Date.now() + Math.random(),
+                        id: createLocalId(),
                         description: svc.name + (svc.description ? " -- " + svc.description : ""),
                         quantity: 1,
                         unitPrice: String(svc.price ?? ""),
@@ -442,7 +461,7 @@ export default function InvoicesPage(props) {
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button style={buttonSecondary} onClick={openInvoicePreview}>Preview PDF</button>
                   <button style={{ ...buttonSecondary, opacity: savingInvoice ? 0.6 : 1 }} disabled={savingInvoice} onClick={async () => { setInvoiceForm((prev) => ({ ...prev, status: "Draft" })); const ok = await saveInvoice(); if (ok) setInvoiceWizardStep(1); }}>Save Draft</button>
-                  <button style={{ ...buttonPrimary, opacity: savingInvoice ? 0.6 : 1 }} disabled={savingInvoice} onClick={async () => { const ok = await saveInvoice(); if (ok) setInvoiceWizardStep(1); }}>{savingInvoice ? "Saving..." : "Save Invoice Paid"}</button>
+                  <button style={{ ...buttonPrimary, opacity: savingInvoice ? 0.6 : 1 }} disabled={savingInvoice} onClick={async () => { const ok = await saveInvoice(); if (ok) setInvoiceWizardStep(1); }}>{savingInvoice ? "Saving..." : "Save Invoice"}</button>
                 </div>
               </div>
             </div>
@@ -468,7 +487,7 @@ export default function InvoicesPage(props) {
                   background: row.type === "credit_note" ? "#F5ECFB" : v === "Paid" ? "#dcfce7" : v === "Draft" ? "#f1f5f9" : "#fef9c3",
                   color: row.type === "credit_note" ? colours.purple : v === "Paid" ? "#16a34a" : v === "Draft" ? "#64748b" : "#b45309",
                 }}>
-                  {row.type === "credit_note" ? "CN" : v === "Paid" ? "Paid PAID" : v || "Draft"}
+                  {row.type === "credit_note" ? "CN" : v === "Paid" ? "Paid" : v || "Draft"}
                 </span>
               )},
               {
@@ -484,7 +503,7 @@ export default function InvoicesPage(props) {
                     </button>
                     <button
                       style={{ ...buttonSecondary, color: colours.teal, borderColor: colours.teal }}
-                      onClick={() => { if (typeof sendInvoiceFromPreview === "function") sendInvoiceFromPreview(row.id); else if (window.sendInvoiceFromPreview) window.sendInvoiceFromPreview(row.id); }}
+                      onClick={() => sendInvoiceEmail(row.id)}
                     >
                       Email
                     </button>
