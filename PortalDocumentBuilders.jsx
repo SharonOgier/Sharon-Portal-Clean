@@ -642,7 +642,7 @@ export function buildInvoiceHtml(invoice, stripeCheckoutUrl = "", options = {}, 
   const gstAppliesToClient = (id) => Boolean(profile.gstRegistered) && !clientIsGstExempt(id);
   const getDocumentBusinessName = () => profile.hideLegalNameOnDocs || !profile.legalBusinessName ? profile.businessName : profile.legalBusinessName;
   const getDocumentAddress = () => profile.hideAddressOnDocs ? "" : profile.address || "";
-const { allowEmail = false } = options;
+const { allowEmail = false, paypalCheckoutUrl = "" } = options;
 const previewClient = getClientById(invoice.clientId);
 const currencyCode = invoice.currencyCode || getClientCurrencyCode(previewClient);
 const money = (value) => formatCurrencyByCode(value, currencyCode);
