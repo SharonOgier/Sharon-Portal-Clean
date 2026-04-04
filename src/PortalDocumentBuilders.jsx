@@ -654,6 +654,7 @@ return `<!doctype html>
 
 export function buildInvoiceHtml(invoice, stripeCheckoutUrl = "", options = {}, ctx = {}) {
   const { profile, clients, serverBaseUrl = "" } = ctx;
+  const safeServerBaseUrl = getApiBaseUrl(serverBaseUrl);
   const getClientById = (id) => clients.find((c) => c.id === safeNumber(id));
   const clientIsGstExempt = (id) => Boolean(getClientById(id)?.outsideAustraliaOrGstExempt);
   const gstAppliesToClient = (id) => Boolean(profile.gstRegistered) && !clientIsGstExempt(id);
@@ -778,9 +779,9 @@ th { text-align:left; color:#64748B; }
 </div>
 
 <div class="right">
-  <div><strong>Invoice #:</strong> ${invoice.invoiceNumber || ""}</div>
-  <div><strong>Date:</strong> ${formatDateAU(invoice.invoiceDate)}</div>
-  <div><strong>Due:</strong> ${formatDateAU(invoice.dueDate)}</div>
+  <div><strong>Invoice #:</strong> ${escapeHtml(invoice.invoiceNumber || "")}</div>
+  <div><strong>Date:</strong> ${escapeHtml(formatDateAU(invoice.invoiceDate))}</div>
+  <div><strong>Due:</strong> ${escapeHtml(formatDateAU(invoice.dueDate))}</div>
 </div>
 </div>
 
@@ -836,10 +837,10 @@ ${purchaseOrderBlock}
 <div class="payment">
 <strong>Please make payment to:</strong>
 <div style="margin-top:10px; font-size:14px;">
-  ${profile.bankName ? `<div><strong>Account Name:</strong> ${profile.bankName}</div>` : ""}
-  ${profile.bsb ? `<div><strong>BSB:</strong> ${profile.bsb}</div>` : ""}
-  ${profile.accountNumber ? `<div><strong>Account Number:</strong> ${profile.accountNumber}</div>` : ""}
-  ${profile.payId ? `<div><strong>PayID:</strong> ${profile.payId}</div>` : ""}
+  ${profile.bankName ? `<div><strong>Account Name:</strong> ${escapeHtml(profile.bankName)}</div>` : ""}
+  ${profile.bsb ? `<div><strong>BSB:</strong> ${escapeHtml(profile.bsb)}</div>` : ""}
+  ${profile.accountNumber ? `<div><strong>Account Number:</strong> ${escapeHtml(profile.accountNumber)}</div>` : ""}
+  ${profile.payId ? `<div><strong>PayID:</strong> ${escapeHtml(profile.payId)}</div>` : ""}
 </div>
 <div style="margin-top:10px; font-size:13px; color:#555;">
   Please use reference: ${paymentReference}
@@ -848,7 +849,7 @@ ${purchaseOrderBlock}
   <div style="font-weight:700; color:#14202B; margin-bottom:8px;">Pay Online</div>
   <div style="font-size:13px; color:#555; margin-bottom:10px;">Choose your preferred payment method below.</div>
   ${stripeCheckoutUrl
-    ? `<a href="${stripeCheckoutUrl}" target="_blank" rel="noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
+    ? `<a href="${safeHref(stripeCheckoutUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
     : ""
   }
   <button id="paypal-pay-btn"
@@ -862,7 +863,7 @@ ${purchaseOrderBlock}
       btn.textContent = 'Processing...';
       status.textContent = '';
       try {
-        var res = await fetch('${serverBaseUrl}/api/create-paypal-order', {
+        var res = await fetch('${safeServerBaseUrl}/api/create-paypal-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -878,7 +879,7 @@ ${purchaseOrderBlock}
         });
         var data = await res.json();
         if (data.ok && data.url) {
-          window.open(data.url, '_blank');
+          window.open(data.url, '_blank', 'noopener,noreferrer');
           status.textContent = 'PayPal checkout opened.';
         } else {
           status.textContent = data.error || 'PayPal failed. Please try again.';

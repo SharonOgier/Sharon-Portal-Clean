@@ -16,12 +16,23 @@ const supabase = supabaseUrl && supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey)
   : null;
 const app = express();
+app.disable("x-powered-by");
 const PORT = Number(process.env.PORT || 10000);
 
 const distPath = path.join(__dirname, "dist");
 const distIndexPath = path.join(distPath, "index.html");
 const publicPath = path.join(__dirname, "public");
 const landingPath = path.join(publicPath, "landing.html");
+
+const normaliseOrigin = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+};
 
 const rawCorsOrigins = [
   process.env.CLIENT_URL,
@@ -36,11 +47,25 @@ const rawCorsOrigins = [
   "http://127.0.0.1:3001",
 ];
 
-const CLIENT_URLS = [...new Set(rawCorsOrigins.filter(Boolean))];
+const CLIENT_URLS = [...new Set(rawCorsOrigins.map(normaliseOrigin).filter(Boolean))];
+
+function isAllowedOrigin(value) {
+  const origin = normaliseOrigin(value);
+  return Boolean(origin) && CLIENT_URLS.includes(origin);
+}
+
+function buildAllowedBaseUrl(req) {
+  const requestOrigin = normaliseOrigin(req?.headers?.origin);
+  if (requestOrigin && isAllowedOrigin(requestOrigin)) {
+    return requestOrigin;
+  }
+  const configuredOrigin = CLIENT_URLS.find((url) => isSafeHttpUrl(url));
+  return configuredOrigin || "http://localhost:5173";
+}
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || CLIENT_URLS.includes(origin)) {
+    if (!origin || isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     return callback(new Error(`CORS blocked for origin: ${origin}`));
@@ -135,10 +160,14 @@ setInterval(() => {
 }, 5 * 60_000);
 
 // ── Security headers ───────────────────────────────────────────
-app.use("/api/", (req, res, next) => {
+app.use((req, res, next) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.set("X-Frame-Options", "DENY");
-  res.set("X-XSS-Protection", "1; mode=block");
+  res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (req.path.startsWith("/api/")) {
+    res.set("Cache-Control", "no-store");
+  }
   next();
 });
 
@@ -169,13 +198,21 @@ function moneyToCents(amount) {
 }
 
 function normaliseRecipients(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  const items = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+  const unique = [...new Set(items.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean))];
+  const valid = unique.filter((email) => isValidEmailAddress(email));
+
+  if (unique.length !== valid.length) {
+    throw new Error("One or more recipient email addresses are invalid.");
   }
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+
+  return valid.slice(0, 10);
 }
 
 function escapeHtml(value) {
@@ -186,7 +223,7 @@ function escapeHtml(value) {
     .replace(/\"/g, "&quot;");
 }
 
-function isSafeHttpsUrl(value) {
+function isSafeHttpUrl(value) {
   try {
     const u = new URL(String(value || ""));
     if (u.protocol === "https:") return true;
@@ -195,6 +232,43 @@ function isSafeHttpsUrl(value) {
   } catch {
     return false;
   }
+}
+
+
+function isAllowedRedirectUrl(value) {
+  try {
+    const u = new URL(String(value || ""));
+    return isSafeHttpUrl(u.toString()) && isAllowedOrigin(u.origin);
+  } catch {
+    return false;
+  }
+}
+
+function resolveRedirectUrl({ requestedUrl, fallbackBaseUrl, searchParams = {} }) {
+  const requested = String(requestedUrl || "").trim();
+  if (requested && isAllowedRedirectUrl(requested)) {
+    return requested;
+  }
+  const url = new URL(fallbackBaseUrl);
+  Object.entries(searchParams || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value) !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url.toString();
+}
+
+function isValidEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function validateCurrencyCode(value, fallback = "AUD") {
+  const code = String(value || fallback).trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : fallback;
+}
+
+function sanitiseFreeText(value, maxLength = 500) {
+  return String(value || "").replace(/[ -]+/g, " ").trim().slice(0, maxLength);
 }
 
 function fileExists(pathValue) {
@@ -327,7 +401,7 @@ function buildFallbackDocumentHtml(payload = {}) {
     (isQuote ? "Quote" : "Invoice");
   const message = payload.message || `Please find your ${isQuote ? "quote" : "invoice"} attached.`;
   const stripeCheckoutUrl = String(payload.stripeCheckoutUrl || "").trim();
-  const safeCheckoutUrl = !isQuote && isSafeHttpsUrl(stripeCheckoutUrl) ? stripeCheckoutUrl : "";
+  const safeCheckoutUrl = !isQuote && isSafeHttpUrl(stripeCheckoutUrl) ? stripeCheckoutUrl : "";
   const title = isQuote ? "Quote" : "Invoice";
   const numberLabel = isQuote ? "Quote No:" : "Invoice No:";
   const clientLabel = isQuote ? "Prepared For:" : "Billed To:";
@@ -586,14 +660,6 @@ async function sendEmailWithPdf({
       attachmentSource,
     });
 
-    const debugPdfPath = path.join(process.cwd(), "debug-last-pdf.pdf");
-    try {
-      fs.writeFileSync(debugPdfPath, pdfBuffer);
-      console.log("Saved debug PDF copy:", debugPdfPath);
-    } catch (debugWriteError) {
-      console.warn("Could not save debug PDF copy:", debugWriteError?.message || debugWriteError);
-    }
-
     if (pdfHeader === "%PDF-") {
       payload.attachments = [
         {
@@ -766,39 +832,41 @@ app.post("/api/create-checkout-session", async (req, res) => {
       });
     }
 
-    const requestOrigin = String(req.headers.origin || "").trim();
-    const fallbackBaseUrl =
-      (requestOrigin && isSafeHttpsUrl(requestOrigin) && requestOrigin) ||
-      CLIENT_URLS.find((url) => isSafeHttpsUrl(url)) ||
-      "http://localhost:5173";
+    const fallbackBaseUrl = buildAllowedBaseUrl(req);
 
-    const resolvedSuccessUrl = String(
-      successUrl || `${fallbackBaseUrl}?stripe=success&invoice=${encodeURIComponent(String(invoiceNumber || ""))}&invoiceId=${encodeURIComponent(String(invoiceId || ""))}`
-    ).trim();
+    const resolvedSuccessUrl = resolveRedirectUrl({
+      requestedUrl: successUrl,
+      fallbackBaseUrl,
+      searchParams: {
+        stripe: "success",
+        invoice: String(invoiceNumber || ""),
+        invoiceId: String(invoiceId || ""),
+      },
+    });
 
-    const resolvedCancelUrl = String(
-      cancelUrl || `${fallbackBaseUrl}?stripe=cancel&invoice=${encodeURIComponent(String(invoiceNumber || ""))}&invoiceId=${encodeURIComponent(String(invoiceId || ""))}`
-    ).trim();
+    const resolvedCancelUrl = resolveRedirectUrl({
+      requestedUrl: cancelUrl,
+      fallbackBaseUrl,
+      searchParams: {
+        stripe: "cancel",
+        invoice: String(invoiceNumber || ""),
+        invoiceId: String(invoiceId || ""),
+      },
+    });
 
-    if (!isSafeHttpsUrl(resolvedSuccessUrl) || !isSafeHttpsUrl(resolvedCancelUrl)) {
+    if (!isAllowedRedirectUrl(resolvedSuccessUrl) || !isAllowedRedirectUrl(resolvedCancelUrl)) {
       return res.status(400).json({
         ok: false,
-        error: "Redirect URLs must use https, or http for localhost.",
-        received: {
-          successUrl,
-          cancelUrl,
-          resolvedSuccessUrl,
-          resolvedCancelUrl,
-          requestOrigin,
-        },
+        error: "Redirect URLs must match an allowed portal origin.",
       });
     }
 
-    const resolvedCurrency = String(currency || "aud").toLowerCase();
+    const resolvedCurrency = validateCurrencyCode(currency || "AUD", "AUD").toLowerCase();
+    const resolvedDescription = sanitiseFreeText(description || `Invoice ${invoiceNumber || invoiceId || ""}`, 120) || "Invoice payment";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: String(customerEmail || "").trim() || undefined,
+      customer_email: isValidEmailAddress(customerEmail) ? String(customerEmail).trim() : undefined,
       success_url: resolvedSuccessUrl,
       cancel_url: resolvedCancelUrl,
       line_items: [
@@ -808,7 +876,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
             currency: resolvedCurrency,
             unit_amount: resolvedAmount,
             product_data: {
-              name: description || `Invoice ${invoiceNumber || invoiceId || ""}`.trim(),
+              name: resolvedDescription,
               metadata: {
                 invoiceId: String(invoiceId || ""),
                 invoiceNumber: String(invoiceNumber || ""),
@@ -877,22 +945,34 @@ app.post("/api/create-paypal-order", async (req, res) => {
       });
     }
 
-    const resolvedCurrency = String(currency || "AUD").toUpperCase();
-    const resolvedDescription = description || `Invoice ${invoiceNumber || invoiceId || ""}`.trim();
+    const resolvedCurrency = validateCurrencyCode(currency || "AUD", "AUD");
+    const resolvedDescription = sanitiseFreeText(description || `Invoice ${invoiceNumber || invoiceId || ""}`, 120) || "Invoice payment";
 
-    const requestOrigin = String(req.headers.origin || "").trim();
-    const fallbackBaseUrl =
-      (requestOrigin && isSafeHttpsUrl(requestOrigin) && requestOrigin) ||
-      CLIENT_URLS.find((url) => isSafeHttpsUrl(url)) ||
-      "http://localhost:5173";
+    const fallbackBaseUrl = buildAllowedBaseUrl(req);
 
-    const resolvedSuccessUrl = String(
-      successUrl || `${fallbackBaseUrl}?paypal=success&invoice=${encodeURIComponent(String(invoiceNumber || ""))}&invoiceId=${encodeURIComponent(String(invoiceId || ""))}`
-    ).trim();
+    const resolvedSuccessUrl = resolveRedirectUrl({
+      requestedUrl: successUrl,
+      fallbackBaseUrl,
+      searchParams: {
+        paypal: "success",
+        invoice: String(invoiceNumber || ""),
+        invoiceId: String(invoiceId || ""),
+      },
+    });
 
-    const resolvedCancelUrl = String(
-      cancelUrl || `${fallbackBaseUrl}?paypal=cancel&invoice=${encodeURIComponent(String(invoiceNumber || ""))}&invoiceId=${encodeURIComponent(String(invoiceId || ""))}`
-    ).trim();
+    const resolvedCancelUrl = resolveRedirectUrl({
+      requestedUrl: cancelUrl,
+      fallbackBaseUrl,
+      searchParams: {
+        paypal: "cancel",
+        invoice: String(invoiceNumber || ""),
+        invoiceId: String(invoiceId || ""),
+      },
+    });
+
+    if (!isAllowedRedirectUrl(resolvedSuccessUrl) || !isAllowedRedirectUrl(resolvedCancelUrl)) {
+      return res.status(400).json({ ok: false, error: "Redirect URLs must match an allowed portal origin." });
+    }
 
     // Step 1: Get PayPal access token
     const authResponse = await fetch(`${paypalBaseUrl}/v1/oauth2/token`, {
@@ -1108,8 +1188,8 @@ app.post("/api/create-subscription-checkout", async (req, res) => {
 
     const { email, userId, businessName, successUrl, cancelUrl } = req.body || {};
 
-    if (!email) {
-      return res.status(400).json({ ok: false, error: "Email is required." });
+    if (!email || !isValidEmailAddress(email)) {
+      return res.status(400).json({ ok: false, error: "A valid email is required." });
     }
 
     const priceId = String(process.env.STRIPE_SUBSCRIPTION_PRICE_ID || "").trim();
@@ -1117,18 +1197,30 @@ app.post("/api/create-subscription-checkout", async (req, res) => {
       return res.status(500).json({ ok: false, error: "STRIPE_SUBSCRIPTION_PRICE_ID is not set in environment variables." });
     }
 
+    const fallbackBaseUrl = buildAllowedBaseUrl(req);
+    const resolvedSuccessUrl = resolveRedirectUrl({
+      requestedUrl: successUrl,
+      fallbackBaseUrl,
+      searchParams: { subscribed: 1 },
+    });
+    const resolvedCancelUrl = resolveRedirectUrl({
+      requestedUrl: cancelUrl,
+      fallbackBaseUrl,
+      searchParams: { subscribed: 0 },
+    });
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      customer_email: email || undefined,
+      customer_email: String(email).trim() || undefined,
       line_items: [{ price: priceId, quantity: 1 }],
       subscription_data: {
         trial_period_days: 0,
-        metadata: { userId: String(userId || ""), businessName: String(businessName || "") },
+        metadata: { userId: String(userId || "").slice(0, 120), businessName: sanitiseFreeText(businessName, 120) },
       },
-      metadata: { userId: String(userId || ""), type: "portal_subscription" },
-      success_url: successUrl || `${req.headers.origin || ""}?subscribed=1`,
-      cancel_url: cancelUrl || `${req.headers.origin || ""}?subscribed=0`,
+      metadata: { userId: String(userId || "").slice(0, 120), type: "portal_subscription" },
+      success_url: resolvedSuccessUrl,
+      cancel_url: resolvedCancelUrl,
     });
 
     return res.json({ ok: true, url: session.url });
