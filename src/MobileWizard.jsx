@@ -52,6 +52,16 @@ import {
   SUPABASE_TABLES,
 } from "./PortalHelpers";
 
+
+// ── SECURITY: Prevent internal error detail leakage ──
+const safeErrorMessage = (err) => {
+  const msg = typeof err === "string" ? err : err?.message || "";
+  if (/postgres|supabase|pgrst|jwt|token|sql|relation|column|schema|violat/i.test(msg)) {
+    return "Something went wrong. Please try again.";
+  }
+  return msg || "Something went wrong. Please try again.";
+};
+
 // ─── tiny helpers ────────────────────────────────────────────────────────────
 
 const currency = (v) =>
@@ -62,7 +72,7 @@ const currency = (v) =>
   }).format(Number(v || 0));
 
 const blankLine = () => ({
-  id: Date.now() + Math.random(),
+  id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2,10)}`,
   description: "",
   quantity: 1,
   unitPrice: "",
@@ -358,7 +368,7 @@ function LineItemsStep({ lineItems, setLineItems, clientIsGstExempt, gstRegister
             <input
               list={services && services.length > 0 ? `service-options-${li.id}` : undefined}
               style={s.input}
-              placeholder="Service or product description"
+              placeholder="Service or product description" maxLength={500}
               value={li.description}
               onChange={(e) => {
                 const nextValue = e.target.value;
@@ -608,7 +618,7 @@ function InvoiceWizard({ profile, clients, invoices, services, onClose, onSaved,
       }
       toast.success(`Invoice ${invoiceNumber} saved!`);
     } catch (err) {
-      toast.error(err.message || "Save failed");
+      toast.error(safeErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -654,15 +664,15 @@ function InvoiceWizard({ profile, clients, invoices, services, onClose, onSaved,
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Client name *</label>
-                  <input style={s.input} placeholder="Client or business name" value={manualClient.name} onChange={(e) => setManualClient((prev) => ({ ...prev, name: e.target.value }))} />
+                  <input style={s.input} placeholder="Client or business name" maxLength={200} value={manualClient.name} onChange={(e) => setManualClient((prev) => ({ ...prev, name: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Email</label>
-                  <input style={s.input} placeholder="client@example.com" value={manualClient.email} onChange={(e) => setManualClient((prev) => ({ ...prev, email: e.target.value }))} />
+                  <input style={s.input} placeholder="client@example.com" maxLength={254} value={manualClient.email} onChange={(e) => setManualClient((prev) => ({ ...prev, email: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Business name</label>
-                  <input style={s.input} placeholder="Business name" value={manualClient.businessName} onChange={(e) => setManualClient((prev) => ({ ...prev, businessName: e.target.value }))} />
+                  <input style={s.input} placeholder="Business name" maxLength={200} value={manualClient.businessName} onChange={(e) => setManualClient((prev) => ({ ...prev, businessName: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Currency</label>
@@ -727,12 +737,12 @@ function InvoiceWizard({ profile, clients, invoices, services, onClose, onSaved,
             {selectedClient?.hasPurchaseOrder && (
               <div style={s.fieldGroup}>
                 <label style={s.label}>PO / Reference</label>
-                <input style={s.input} placeholder="Purchase order number" value={form.purchaseOrderReference} onChange={(e) => setF("purchaseOrderReference", e.target.value)} />
+                <input style={s.input} placeholder="Purchase order number" maxLength={100} value={form.purchaseOrderReference} onChange={(e) => setF("purchaseOrderReference", e.target.value)} />
               </div>
             )}
             <div style={s.fieldGroup}>
               <label style={s.label}>Comments / Notes</label>
-              <textarea style={{ ...s.input, minHeight: 80, resize: "vertical" }} placeholder="Any extra notes for the client…" value={form.comments} onChange={(e) => setF("comments", e.target.value)} />
+              <textarea style={{ ...s.input, minHeight: 80, resize: "vertical" }} placeholder="Any extra notes for the client…" maxLength={2000} value={form.comments} onChange={(e) => setF("comments", e.target.value)} />
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: colours.text }}>
               <input type="checkbox" checked={form.hidePhoneNumber} onChange={(e) => setF("hidePhoneNumber", e.target.checked)} />
@@ -909,7 +919,7 @@ function QuoteWizard({ profile, clients, quotes, services, onClose, onSaved, ups
       toast.success(`Quote ${quoteNumber} saved!`);
       setDone({ number: quoteNumber });
     } catch (err) {
-      toast.error(err.message || "Save failed");
+      toast.error(safeErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -953,15 +963,15 @@ function QuoteWizard({ profile, clients, quotes, services, onClose, onSaved, ups
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Client name *</label>
-                  <input style={s.input} placeholder="Client or business name" value={manualClient.name} onChange={(e) => setManualClient((prev) => ({ ...prev, name: e.target.value }))} />
+                  <input style={s.input} placeholder="Client or business name" maxLength={200} value={manualClient.name} onChange={(e) => setManualClient((prev) => ({ ...prev, name: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Email</label>
-                  <input style={s.input} placeholder="client@example.com" value={manualClient.email} onChange={(e) => setManualClient((prev) => ({ ...prev, email: e.target.value }))} />
+                  <input style={s.input} placeholder="client@example.com" maxLength={254} value={manualClient.email} onChange={(e) => setManualClient((prev) => ({ ...prev, email: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Business name</label>
-                  <input style={s.input} placeholder="Business name" value={manualClient.businessName} onChange={(e) => setManualClient((prev) => ({ ...prev, businessName: e.target.value }))} />
+                  <input style={s.input} placeholder="Business name" maxLength={200} value={manualClient.businessName} onChange={(e) => setManualClient((prev) => ({ ...prev, businessName: e.target.value }))} />
                 </div>
                 <div style={s.fieldGroup}>
                   <label style={s.label}>Currency</label>
@@ -1015,7 +1025,7 @@ function QuoteWizard({ profile, clients, quotes, services, onClose, onSaved, ups
             </div>
             <div style={s.fieldGroup}>
               <label style={s.label}>Comments / Notes</label>
-              <textarea style={{ ...s.input, minHeight: 80, resize: "vertical" }} placeholder="Any notes for the client…" value={form.comments} onChange={(e) => setF("comments", e.target.value)} />
+              <textarea style={{ ...s.input, minHeight: 80, resize: "vertical" }} placeholder="Any notes for the client…" maxLength={2000} value={form.comments} onChange={(e) => setF("comments", e.target.value)} />
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: colours.text }}>
               <input type="checkbox" checked={form.hidePhoneNumber} onChange={(e) => setF("hidePhoneNumber", e.target.checked)} />
@@ -1144,7 +1154,7 @@ function ExpenseWizard({ profile, expenses, onClose, onSaved, upsertRecord, uplo
       toast.success("Expense saved!");
       setDone(true);
     } catch (err) {
-      toast.error(err.message || "Save failed");
+      toast.error(safeErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -1216,7 +1226,7 @@ function ExpenseWizard({ profile, expenses, onClose, onSaved, upsertRecord, uplo
             <div style={s.sectionTitle}>Expense Details</div>
             <div style={s.fieldGroup}>
               <label style={s.label}>Supplier / Payee *</label>
-              <input style={s.input} placeholder="e.g. Officeworks, AGL…" value={form.supplier} onChange={(e) => setF("supplier", e.target.value)} />
+              <input style={s.input} placeholder="e.g. Officeworks, AGL…" maxLength={200} value={form.supplier} onChange={(e) => setF("supplier", e.target.value)} />
             </div>
             <div style={s.fieldGroup}>
               <label style={s.label}>Amount (incl. GST) *</label>
@@ -1229,7 +1239,7 @@ function ExpenseWizard({ profile, expenses, onClose, onSaved, upsertRecord, uplo
             </div>
             <div style={s.fieldGroup}>
               <label style={s.label}>Description</label>
-              <input style={s.input} placeholder="Brief description (optional)" value={form.description} onChange={(e) => setF("description", e.target.value)} />
+              <input style={s.input} placeholder="Brief description (optional)" maxLength={500} value={form.description} onChange={(e) => setF("description", e.target.value)} />
             </div>
             <div style={s.row2}>
               <div style={s.fieldGroup}>

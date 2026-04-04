@@ -473,7 +473,7 @@ th { text-align:left; color:#667085; }
 <div class="print-toolbar">
 <div id="preview-email-status" class="preview-status"></div>
 <div class="toolbar-actions">
-  ${allowEmail ? `<button id="preview-email-button" class="email-button" onclick="window.opener && window.opener.sendQuoteFromPreview && window.opener.sendQuoteFromPreview(${JSON.stringify(quote.id)}, window)">Email Quote</button>` : ""}
+  ${allowEmail ? `<button id="preview-email-button" class="email-button" onclick="if(window.opener){try{window.opener.postMessage({type:'sendQuoteFromPreview',quoteId:${JSON.stringify(quote.id)}},window.opener.location.origin)}catch(e){}}">Email Quote</button>` : ""}
   <a href="javascript:void(0)" class="print-button" onclick="window.print()">Print / Download PDF</a>
 </div>
 </div>
@@ -760,7 +760,7 @@ th { text-align:left; color:#64748B; }
 <div class="print-toolbar">
 <div id="preview-email-status" class="preview-status"></div>
 <div class="toolbar-actions">
-  ${allowEmail ? `<button id="preview-email-button" class="email-button" onclick="window.opener && window.opener.sendInvoiceFromPreview && window.opener.sendInvoiceFromPreview(${JSON.stringify(invoice.id)}, window)">Email Invoice</button>` : ""}
+  ${allowEmail ? `<button id="preview-email-button" class="email-button" onclick="if(window.opener){try{window.opener.postMessage({type:'sendInvoiceFromPreview',invoiceId:${JSON.stringify(invoice.id)}},window.opener.location.origin)}catch(e){}}">Email Invoice</button>` : ""}
   <a href="javascript:void(0)" class="print-button" onclick="window.print()">Print / Download PDF</a>
 </div>
 </div>

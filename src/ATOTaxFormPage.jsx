@@ -68,7 +68,12 @@ function mlsCalc(ri,isRes,hasCover,family,children) {
 }
 
 function dlCSV(name,header,rows) {
-  const esc = v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  const esc = v => {
+    let s = String(v ?? '').replace(/"/g, '""');
+    // SECURITY: Prevent CSV formula injection
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s + '"';
+  };
   const csv=[header,...rows].map(r=>r.map(esc).join(",")).join("\r\n");
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
@@ -248,7 +253,7 @@ export default function ATOTaxFormPage({
                 {["Salary/Wages","Government allowance","Business (sole trader)","Interest","Dividends","Other"].map(o=><option key={o}>{o}</option>)}
               </select>
             </div>
-            <div><label style={ss.lbl}>Payer</label><input style={ss.inp} placeholder="Employer/Agency/Client" value={incF.payer} onChange={e=>setIncF(p=>({...p,payer:e.target.value}))} /></div>
+            <div><label style={ss.lbl}>Payer</label><input style={ss.inp} placeholder="Employer/Agency/Client" maxLength={200} value={incF.payer} onChange={e=>setIncF(p=>({...p,payer:e.target.value}))} /></div>
             <div><label style={ss.lbl}>Gross ($)</label><input type="number" style={ss.inp} step="0.01" min="0" value={incF.gross} onChange={e=>setIncF(p=>({...p,gross:e.target.value}))} /></div>
             <div><label style={ss.lbl}>Tax withheld ($)</label><input type="number" style={ss.inp} step="0.01" min="0" value={incF.withheld} onChange={e=>setIncF(p=>({...p,withheld:e.target.value}))} /></div>
             <div><label style={ss.lbl}>Franked amount ($)</label><input type="number" style={ss.inp} step="0.01" min="0" value={incF.franked} onChange={e=>setIncF(p=>({...p,franked:e.target.value}))} /></div>
@@ -357,7 +362,7 @@ export default function ATOTaxFormPage({
           <div style={ss.sec}>
             <h3 style={ss.h3}>Period &amp; Entity</h3>
             <div style={{...ss.grid,maxWidth:520}}>
-              <div><label style={ss.lbl}>Period</label><input style={ss.inp} placeholder="If blank, uses Tax Summary period label" value={itr.periodLabel} onChange={e=>si("periodLabel",e.target.value)} /></div>
+              <div><label style={ss.lbl}>Period</label><input style={ss.inp} placeholder="If blank, uses Tax Summary period label" maxLength={50} value={itr.periodLabel} onChange={e=>si("periodLabel",e.target.value)} /></div>
               <div><label style={ss.lbl}>ABN</label><input style={{...ss.inp,background:"#f8f8f8"}} readOnly value={profile.abn||""} /></div>
               <div><label style={ss.lbl}>Business name</label><input style={{...ss.inp,background:"#f8f8f8"}} readOnly value={profile.businessName||""} /></div>
             </div>
@@ -386,7 +391,7 @@ export default function ATOTaxFormPage({
             <h3 style={ss.h3}>Declaration (for client signature)</h3>
             <p style={{fontSize:12,color:"#666",margin:"0 0 12px"}}>I declare that the information provided for the above Business Activity Statement is true and correct, and that I am authorised to make this declaration.</p>
             <div style={{...ss.grid,maxWidth:520}}>
-              <div><label style={ss.lbl}>Signed by</label><input style={ss.inp} placeholder="Client name" /></div>
+              <div><label style={ss.lbl}>Signed by</label><input style={ss.inp} placeholder="Client name" maxLength={200} /></div>
               <div><label style={ss.lbl}>Date</label><input type="date" style={ss.inp} /></div>
             </div>
           </div>
@@ -401,7 +406,7 @@ export default function ATOTaxFormPage({
                 <option value="yes">Yes (2%)</option><option value="no">No</option>
               </select>
             </div>
-            <div><label style={ss.lbl}>Period label</label><input style={ss.inp} placeholder="e.g. 2025–26 full year" value={itr.periodLabel} onChange={e=>si("periodLabel",e.target.value)} /></div>
+            <div><label style={ss.lbl}>Period label</label><input style={ss.inp} placeholder="e.g. 2025–26 full year" maxLength={50} value={itr.periodLabel} onChange={e=>si("periodLabel",e.target.value)} /></div>
           </div>
           <table style={ss.table}>
             <tbody>

@@ -36,6 +36,15 @@ import {
   LOGO_PREVIEW_MAX_WIDTH,
 } from "./PortalHelpers";
 
+// ── SECURITY: Prevent internal error detail leakage ──
+const safeErrorMessage = (err) => {
+  const msg = typeof err === "string" ? err : err?.message || "";
+  if (/postgres|supabase|pgrst|jwt|token|sql|relation|column|schema|violat/i.test(msg)) {
+    return "Something went wrong. Please try again.";
+  }
+  return msg || "Something went wrong. Please try again.";
+};
+
 export function ToastContainer({ toasts, onRemove }) {
   if (!toasts.length) return null;
   return (
@@ -692,6 +701,8 @@ export function ExpenseTypeModal({
                 <button
                   style={{ ...buttonSecondary, padding: "8px 12px" }}
                   onClick={() => {
+                    // SECURITY NOTE: window.prompt is basic but acceptable here since the value
+                    // is only used in local state and never sent to DB without validation.
                     const newType = window.prompt("Add new work type");
                     if (newType && newType.trim()) {
                       const clean = newType.trim();
@@ -710,7 +721,7 @@ export function ExpenseTypeModal({
                 <label style={labelStyle}>Expense category *</label>
                 <input
                   style={inputStyle}
-                  placeholder="Search category"
+                  placeholder="Search category" maxLength={100}
                   value={searchExpenseCategory}
                   onChange={(e) => setSearchExpenseCategory(e.target.value)}
                 />
@@ -890,6 +901,7 @@ export function IncomeSourceModal({
               <input
                 style={inputStyle}
                 value={incomeSourceForm.name}
+                maxLength={200}
                 onChange={(e) =>
                   setIncomeSourceForm((prev) => ({ ...prev, name: e.target.value }))
                 }

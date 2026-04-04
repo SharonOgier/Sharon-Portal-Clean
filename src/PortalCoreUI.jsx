@@ -39,7 +39,7 @@ export function ToastContainer({ toasts, onRemove }) {
           <button onClick={() => onRemove(t.id)} style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: 18, lineHeight: 1, color: "#64748B", padding: 0, marginTop: -1,
-          }}>×</button>
+          }}>\u00d7</button>
         </div>
       ))}
     </div>
@@ -50,7 +50,7 @@ export function useToast() {
   const [toasts, setToasts] = React.useState([]);
   const remove = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
   const add = (message, type = "info", title = "", duration = 4000) => {
-    const id = Date.now() + Math.random();
+    const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setToasts((prev) => [...prev.slice(-4), { id, message, type, title }]);
     if (duration > 0) setTimeout(() => remove(id), duration);
   };
@@ -62,7 +62,7 @@ export function useToast() {
   };
   return { toasts, toast, removeToast: remove };
 }
-// ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 // ── Confirm Modal ────────────────────────────────────────────
 function ConfirmModal({ isOpen, title, message, confirmLabel = "Delete", onConfirm, onCancel }) {
@@ -98,18 +98,13 @@ export function useConfirm() {
 // ── Subscription helpers ──────────────────────────────────────
 const TRIAL_DAYS = 14;
 
-// ── Add client emails here to give free access (no Stripe needed) ──
-const FREE_ACCESS_EMAILS = [
-  // "clientname@example.com",  ← add emails here, one per line
-];
+// ── SECURITY FIX: Master/whitelist emails removed from client code ──
+// These checks must happen server-side (e.g. Supabase RLS or edge function).
+// The client now only checks subscription status — no email-based bypass.
 
 export function getSubscriptionAccess(profile) {
-  // Master account — always full access, no paywall
-  const MASTER_EMAILS = ["info@sharonogier.com", "sharon@sharonogier.com"];
-  const email = (profile?.email || "").toLowerCase().trim();
-  if (MASTER_EMAILS.includes(email)) return { allowed: true, reason: "master" };
-  // Whitelisted clients — free access granted by Sharon
-  if (FREE_ACCESS_EMAILS.includes(email)) return { allowed: true, reason: "whitelisted" };
+  // SECURITY: No client-side email bypass. Master/whitelist checks belong on the server.
+  // The server should set profile.subscriptionStatus = "active" for master/whitelisted accounts.
   const status = profile?.subscriptionStatus || "";
   const trialStarted = profile?.trialStartedAt || profile?.setupCompletedAt || "";
   if (status === "active") return { allowed: true, reason: "active" };
@@ -123,15 +118,32 @@ export function getSubscriptionAccess(profile) {
   return { allowed: true, reason: "legacy" };
 }
 
-export function PaywallScreen({ profile, serverBaseUrl }) {
+// ── SECURITY FIX: safeErrorMessage prevents internal detail leakage ──
+const safeErrorMessage = (err) => {
+  const msg = typeof err === "string" ? err : err?.message || "";
+  if (/postgres|supabase|pgrst|jwt|token|sql|relation|column|schema|violat/i.test(msg)) {
+    return "Something went wrong. Please try again.";
+  }
+  return msg || "Something went wrong. Please try again.";
+};
+
+export function PaywallScreen({ profile, serverBaseUrl, supabase }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const access = getSubscriptionAccess(profile);
   const handleSubscribe = async () => {
     setLoading(true); setError("");
     try {
+      // SECURITY FIX: Include auth token in checkout request
+      const headers = { "Content-Type": "application/json" };
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+      }
       const res = await fetch(`${serverBaseUrl}/api/create-subscription-checkout`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers,
         body: JSON.stringify({ email: profile.email, userId: profile.user_id || profile.id, businessName: profile.businessName, successUrl: window.location.origin + "?subscribed=1", cancelUrl: window.location.origin + "?subscribed=0" }),
       });
       const data = await res.json();
@@ -145,7 +157,7 @@ export function PaywallScreen({ profile, serverBaseUrl }) {
       <div style={{ width: "100%", maxWidth: 480, textAlign: "center" }}>
         <div style={{ fontSize: 22, fontWeight: 900, color: "#6A1B9A", marginBottom: 8 }}>{profile.businessName || "Your Portal"}</div>
         <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 18, padding: 32, marginTop: 24, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>{access.reason === "trial_expired" ? "⏰" : "🔒"}</div>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>{access.reason === "trial_expired" ? "\u23f0" : "\ud83d\udd12"}</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#14202B", marginBottom: 10 }}>
             {access.reason === "trial_expired" ? "Your free trial has ended" : "Subscription required"}
           </div>
@@ -154,13 +166,13 @@ export function PaywallScreen({ profile, serverBaseUrl }) {
           </div>
           <div style={{ background: "#F5ECFB", borderRadius: 14, padding: "20px 24px", marginBottom: 24 }}>
             <div style={{ fontSize: 36, fontWeight: 900, color: "#6A1B9A" }}>${DEFAULT_MONTHLY_SUBSCRIPTION}</div>
-            <div style={{ fontSize: 14, color: "#64748B", marginTop: 4 }}>per month · cancel anytime</div>
+            <div style={{ fontSize: 14, color: "#64748B", marginTop: 4 }}>per month \u00b7 cancel anytime</div>
           </div>
           {error && <div style={{ background: "#FEE2E2", color: "#991B1B", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13 }}>{error}</div>}
           <button onClick={handleSubscribe} disabled={loading} style={{ width: "100%", background: loading ? "#9CA3AF" : "#6A1B9A", color: "#fff", border: "none", borderRadius: 12, padding: "14px 20px", fontSize: 16, fontWeight: 800, cursor: loading ? "not-allowed" : "pointer" }}>
-            {loading ? "Redirecting to checkout..." : "Subscribe now — $" + DEFAULT_MONTHLY_SUBSCRIPTION + "/month"}
+            {loading ? "Redirecting to checkout..." : "Subscribe now \u2014 $" + DEFAULT_MONTHLY_SUBSCRIPTION + "/month"}
           </button>
-          <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 14 }}>Secure payment via Stripe · Cancel anytime</div>
+          <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 14 }}>Secure payment via Stripe \u00b7 Cancel anytime</div>
         </div>
         <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 20 }}>
           Already subscribed? <button onClick={() => window.location.reload()} style={{ background: "none", border: "none", color: "#6A1B9A", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Refresh to continue</button>
@@ -170,4 +182,3 @@ export function PaywallScreen({ profile, serverBaseUrl }) {
   );
 }
 // ─────────────────────────────────────────────────────────────
-
