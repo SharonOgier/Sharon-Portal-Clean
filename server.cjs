@@ -747,13 +747,34 @@ async function sendEmailWithPdf({
 }
 
 app.get("/", (req, res) => {
-  const bypass = req.query.portal || req.query.signin || req.query.app;
-  if (!bypass && fs.existsSync(landingPath)) {
+  const host = String(req.headers.host || "").toLowerCase();
+  const wantsPortal = Boolean(
+    req.query.portal ||
+    req.query.signin ||
+    req.query.app ||
+    req.query.code ||
+    req.query.type ||
+    req.query.access_token ||
+    req.query.refresh_token ||
+    req.query.token ||
+    req.query.recovery ||
+    req.query.redirect_to ||
+    host.startsWith("portal.") ||
+    host.includes("portal.sharonogier.com")
+  );
+
+  if (wantsPortal && fs.existsSync(distIndexPath)) {
+    return res.sendFile(distIndexPath);
+  }
+
+  if (fs.existsSync(landingPath)) {
     return res.sendFile(landingPath);
   }
+
   if (fs.existsSync(distIndexPath)) {
     return res.sendFile(distIndexPath);
   }
+
   return res.json({ ok: true, message: `Server running on port ${PORT}` });
 });
 
@@ -765,6 +786,13 @@ app.get("/portal", (_req, res) => {
 app.get("/app", (_req, res) => {
   if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
   return res.redirect("/");
+});
+
+["/login", "/signup", "/forgot-password", "/reset-password", "/auth", "/auth/callback", "/update-password"].forEach((routePath) => {
+  app.get(routePath, (_req, res) => {
+    if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
+    return res.redirect("/?portal=1");
+  });
 });
 
 app.get("/health", async (_req, res) => {
