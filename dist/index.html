@@ -1,6 +1,4 @@
-from pathlib import Path
-
-portal_index = """<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -13,8 +11,3 @@ portal_index = """<!doctype html>
     <div id="root"></div>
   </body>
 </html>
-"""
-
-path = Path("/mnt/data/portal_index_restored.html")
-path.write_text(portal_index, encoding="utf-8")
-print(f"Created {path}")
