@@ -1685,7 +1685,7 @@ export default function AccountingPortalPrototype() {
   const payInvoiceWithPayPal = async (invoice) => {
     try {
       const checkoutUrl = await createPayPalOrderForInvoice(invoice);
-      window.open(checkoutUrl, "_blank");
+      window.open(checkoutUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       console.error("PAYPAL CHECKOUT ERROR:", error);
       toast.error(error.message || "PayPal checkout failed");
