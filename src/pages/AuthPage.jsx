@@ -162,7 +162,7 @@ export default function AuthPage(props) {
                   style={inputStyle}
                   value={authForm.password}
                   onChange={(e) => setAuthForm((prev) => ({ ...prev, password: e.target.value }))}
-                  placeholder={authMode === "signup" ? "Minimum 8 characters, upper/lowercase and a number" : "Enter your password"}
+                  placeholder={authMode === "signup" ? "Minimum 8 characters" : "Enter your password"}
                 />
               </div>
               {authMode === "signup" ? (
@@ -180,7 +180,7 @@ export default function AuthPage(props) {
             </div>
 
             {authMode === "signup" ? (
-              <div style={{ fontSize: 12, color: colours.muted, lineHeight: 1.7 }}>Use at least 8 characters with upper-case, lower-case and a number.</div>
+              <div style={{ fontSize: 12, color: colours.muted, lineHeight: 1.7 }}>Use at least 8 characters.</div>
             ) : null}
 
             <div style={{ display: "grid", gap: 10 }}>

@@ -3652,26 +3652,6 @@ export default function AccountingPortalPrototype() {
     );
     }
 
-    if (!authUser) {
-    return (
-      <AuthPage
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authForm={authForm}
-        setAuthForm={setAuthForm}
-        authLoading={authLoading}
-        handleAuthSubmit={handleAuthSubmit}
-        handlePasswordReset={handlePasswordReset}
-        colours={colours}
-        cardStyle={cardStyle}
-        inputStyle={inputStyle}
-        labelStyle={labelStyle}
-        buttonPrimary={buttonPrimary}
-        buttonSecondary={buttonSecondary}
-      />
-    );
-    }
-
     if (isResettingPassword) {
       return (
         <div style={{ minHeight: "100vh", background: colours.bg, display: "grid", placeItems: "center", padding: 20 }}>
@@ -3693,6 +3673,7 @@ export default function AccountingPortalPrototype() {
                 if (!newPassword || newPassword.length < 8) { toast.warning("Password must be at least 8 characters"); return; }
                 if (newPassword !== newPasswordConfirm) { toast.warning("Passwords do not match"); return; }
                 try {
+                  if (!supabase?.auth) throw new Error("Supabase Auth is not configured in client.js");
                   const { error } = await supabase.auth.updateUser({ password: newPassword });
                   if (error) throw error;
                   toast.success("Password updated! You can now sign in.");
@@ -3707,6 +3688,28 @@ export default function AccountingPortalPrototype() {
           </div>
         </div>
       );
+    }
+
+    if (!authUser) {
+    return (
+      <AuthPage
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        authForm={authForm}
+        setAuthForm={setAuthForm}
+        authLoading={authLoading}
+        showResetSentModal={showResetSentModal}
+        setShowResetSentModal={setShowResetSentModal}
+        handleAuthSubmit={handleAuthSubmit}
+        handlePasswordReset={handlePasswordReset}
+        colours={colours}
+        cardStyle={cardStyle}
+        inputStyle={inputStyle}
+        labelStyle={labelStyle}
+        buttonPrimary={buttonPrimary}
+        buttonSecondary={buttonSecondary}
+      />
+    );
     }
 
     if (isSupabaseRestoring || !hasLoadedUserProfile) {
