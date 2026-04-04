@@ -3693,6 +3693,7 @@ export default function AccountingPortalPrototype() {
     if (!authUser) {
     return (
       <AuthPage
+        profile={profile}
         authMode={authMode}
         setAuthMode={setAuthMode}
         authForm={authForm}
@@ -3702,6 +3703,7 @@ export default function AccountingPortalPrototype() {
         setShowResetSentModal={setShowResetSentModal}
         handleAuthSubmit={handleAuthSubmit}
         handlePasswordReset={handlePasswordReset}
+        isValidEmail={isValidEmail}
         colours={colours}
         cardStyle={cardStyle}
         inputStyle={inputStyle}
