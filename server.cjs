@@ -165,13 +165,13 @@ app.use((req, res, next) => {
   res.set("X-Frame-Options", "DENY");
   res.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  res.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  res.set("Cross-Origin-Opener-Policy", "same-origin");
   res.set("Cross-Origin-Resource-Policy", "same-origin");
   res.set("X-XSS-Protection", "0");
   if (req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https")) {
     res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
-  res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://portal.sharonogier.com https://calendly.com; navigate-to 'self' https://portal.sharonogier.com https://calendly.com; upgrade-insecure-requests; block-all-mixed-content;");
+  res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self';");
   if (req.path.startsWith("/api/")) {
     res.set("Cache-Control", "no-store");
   }
@@ -747,34 +747,13 @@ async function sendEmailWithPdf({
 }
 
 app.get("/", (req, res) => {
-  const host = String(req.headers.host || "").toLowerCase();
-  const wantsPortal = Boolean(
-    req.query.portal ||
-    req.query.signin ||
-    req.query.app ||
-    req.query.code ||
-    req.query.type ||
-    req.query.access_token ||
-    req.query.refresh_token ||
-    req.query.token ||
-    req.query.recovery ||
-    req.query.redirect_to ||
-    host.startsWith("portal.") ||
-    host.includes("portal.sharonogier.com")
-  );
-
-  if (wantsPortal && fs.existsSync(distIndexPath)) {
-    return res.sendFile(distIndexPath);
-  }
-
-  if (fs.existsSync(landingPath)) {
+  const bypass = req.query.portal || req.query.signin || req.query.login || req.query.signup || req.query.app;
+  if (!bypass && fs.existsSync(landingPath)) {
     return res.sendFile(landingPath);
   }
-
   if (fs.existsSync(distIndexPath)) {
     return res.sendFile(distIndexPath);
   }
-
   return res.json({ ok: true, message: `Server running on port ${PORT}` });
 });
 
@@ -788,11 +767,25 @@ app.get("/app", (_req, res) => {
   return res.redirect("/");
 });
 
-["/login", "/signup", "/forgot-password", "/reset-password", "/auth", "/auth/callback", "/update-password"].forEach((routePath) => {
-  app.get(routePath, (_req, res) => {
-    if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
-    return res.redirect("/?portal=1");
-  });
+
+app.get("/login", (_req, res) => {
+  if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
+  return res.redirect("/");
+});
+
+app.get("/signup", (_req, res) => {
+  if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
+  return res.redirect("/");
+});
+
+app.get("/reset-password", (_req, res) => {
+  if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
+  return res.redirect("/");
+});
+
+app.get("/update-password", (_req, res) => {
+  if (fs.existsSync(distIndexPath)) return res.sendFile(distIndexPath);
+  return res.redirect("/");
 });
 
 app.get("/health", async (_req, res) => {
