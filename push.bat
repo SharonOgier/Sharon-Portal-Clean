@@ -13,8 +13,7 @@ if exist .git\index.lock (
 
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
-  echo ERROR: This folder is not a Git repository.
-  echo Make sure push.bat is inside your Sharon-Portal-Clean project folder.
+  echo ERROR: Not a Git repo
   pause
   exit /b 1
 )
@@ -22,10 +21,23 @@ if errorlevel 1 (
 echo Checking remote...
 git remote get-url origin >nul 2>&1
 if errorlevel 1 (
-  echo Setting origin remote...
   git remote add origin https://github.com/SharonOgier/Sharon-Portal-Clean.git
-) else (
-  echo Origin remote already exists.
+)
+
+echo.
+echo Switching to master...
+git branch -M master
+
+echo.
+echo Pulling latest from GitHub...
+git pull origin master --rebase
+if errorlevel 1 (
+  echo.
+  echo ERROR during pull.
+  echo You likely have a merge conflict.
+  echo Run: git status
+  pause
+  exit /b 1
 )
 
 echo.
@@ -40,31 +52,13 @@ if %errorlevel%==0 (
 )
 
 echo.
-echo Committing changes...
+echo Committing...
 git commit -m "update"
-if errorlevel 1 (
-  echo Commit failed.
-  pause
-  exit /b 1
-)
 
 echo.
-echo Switching branch to master...
-git branch -M master
-
-echo.
-echo Pushing to GitHub...
+echo Pushing...
 git push -u origin master
-if errorlevel 1 (
-  echo Push failed.
-  echo Run these manually and check the message:
-  echo git status
-  echo git remote -v
-  echo git branch
-  pause
-  exit /b 1
-)
 
 echo.
-echo Push complete.
+echo Done.
 pause

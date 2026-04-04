@@ -102,28 +102,6 @@ export default function AccountingPortalPrototype() {
   const { confirm, modal: confirmModal } = useConfirm();
 
   const MAX_RECEIPT_FILE_BYTES = 10 * 1024 * 1024;
-
-  // --- Security: HTML escape utility to prevent XSS in email templates ---
-  const escapeHtml = (str) => {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  };
-
-  // --- Security: Sanitise user-facing error messages ---
-  const safeErrorMessage = (error, fallback = "Something went wrong") => {
-    const msg = error?.message || fallback;
-    // Strip internal details (table names, SQL, stack traces)
-    if (/relation|column|syntax|pg_|supabase|postgresql|row-level/i.test(msg)) {
-      return fallback;
-    }
-    return msg;
-  };
-
   const MAX_DOCUMENT_FILE_BYTES = 15 * 1024 * 1024;
   const ALLOWED_RECEIPT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
   const ALLOWED_DOCUMENT_TYPES = [
@@ -432,6 +410,28 @@ export default function AccountingPortalPrototype() {
   const [expenseCategorySelection, setExpenseCategorySelection] = useState("");
   const [searchExpenseCategory, setSearchExpenseCategory] = useState("");
 
+  const getPortalAuthUrl = (pathName = "/") => {
+    if (typeof window === "undefined") return pathName;
+    const origin = window.location.origin.replace(/\/$/, "");
+    const safePath = String(pathName || "/").startsWith("/") ? String(pathName || "/") : `/${String(pathName || "")}`;
+    return `${origin}${safePath}`;
+  };
+
+  const clearAuthQueryParams = () => {
+    if (typeof window === "undefined" || !window.history?.replaceState) return;
+    const cleanPath = window.location.pathname || "/";
+    const cleanHash = window.location.hash && window.location.hash.startsWith("#/") ? window.location.hash : "";
+    window.history.replaceState({}, "", `${cleanPath}${cleanHash}`);
+  };
+
+  const openPortalAuthScreen = (mode = "signin") => {
+    setAuthMode(mode === "signup" ? "signup" : "signin");
+    setIsResettingPassword(false);
+    setShowResetSentModal(false);
+    setNewPassword("");
+    setNewPasswordConfirm("");
+  };
+
   const clearPortalForFreshSetup = () => {
     setProfile(initialProfile);
     setClients([]);
@@ -547,6 +547,46 @@ export default function AccountingPortalPrototype() {
   }, [activePage]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const pathName = String(window.location.pathname || "").toLowerCase();
+      const search = new URLSearchParams(window.location.search || "");
+      const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+      const requestedMode =
+        search.get("mode") ||
+        search.get("auth") ||
+        hashParams.get("mode") ||
+        hashParams.get("auth") ||
+        "";
+
+      if (
+        pathName.includes("signup") ||
+        requestedMode === "signup" ||
+        requestedMode === "create-account" ||
+        search.get("signup") === "1"
+      ) {
+        setAuthMode("signup");
+      } else if (
+        pathName.includes("login") ||
+        requestedMode === "signin" ||
+        requestedMode === "login"
+      ) {
+        setAuthMode("signin");
+      }
+
+      const recoveryRequested =
+        pathName.includes("reset-password") ||
+        pathName.includes("update-password") ||
+        search.get("reset") === "1" ||
+        search.get("type") === "recovery" ||
+        hashParams.get("type") === "recovery" ||
+        Boolean(search.get("access_token") && search.get("refresh_token")) ||
+        Boolean(hashParams.get("access_token") && hashParams.get("refresh_token"));
+
+      if (recoveryRequested) {
+        setIsResettingPassword(true);
+      }
+    }
+
     if (!supabase?.auth) {
       setHasLoadedUserProfile(true);
       setAuthReady(true);
@@ -566,8 +606,20 @@ export default function AccountingPortalPrototype() {
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") { setAuthUser(null); setAuthReady(true); return; }
-      if (event === "PASSWORD_RECOVERY") { setIsResettingPassword(true); setAuthReady(true); return; }
+      if (event === "SIGNED_OUT") {
+        setAuthUser(null);
+        setIsResettingPassword(false);
+        setAuthReady(true);
+        return;
+      }
+      if (event === "PASSWORD_RECOVERY") {
+        setIsResettingPassword(true);
+        setAuthReady(true);
+        return;
+      }
+      if (event === "SIGNED_IN") {
+        setIsResettingPassword(false);
+      }
       if (isSigningOut.current) return;
       setAuthUser(session?.user || null);
       setAuthReady(true);
@@ -667,22 +719,30 @@ export default function AccountingPortalPrototype() {
   // Note: incomeSources, services, and documents are persisted in Supabase only.
   // localStorage writes were removed to avoid a stale shadow copy with no reader.
 
-  // Security: Removed window.simulateInvoicePayment — use React refs/context instead
-  // If preview windows need this, pass via postMessage with origin checks.
-
-  // Security: Removed global window function assignments.
-  // Use window.postMessage with strict origin validation instead:
   useEffect(() => {
-    const handleMessage = (event) => {
-      // Only accept messages from our own origin
-      if (event.origin !== window.location.origin) return;
-      const { action, payload } = event.data || {};
-      if (action === "sendInvoiceFromPreview") sendInvoiceFromPreview(payload);
-      else if (action === "sendQuoteFromPreview") sendQuoteFromPreview(payload);
-      else if (action === "payInvoiceWithPayPal") payInvoiceWithPayPal(payload);
+    window.simulateInvoicePayment = simulateInvoicePayment;
+    return () => {
+      delete window.simulateInvoicePayment;
     };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+  }, [invoices]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    window.openPortalAuthScreen = openPortalAuthScreen;
+    return () => {
+      delete window.openPortalAuthScreen;
+    };
+  }, []);
+
+  useEffect(() => {
+    window.sendInvoiceFromPreview = sendInvoiceFromPreview;
+    window.sendQuoteFromPreview = sendQuoteFromPreview;
+    window.payInvoiceWithPayPal = payInvoiceWithPayPal;
+    return () => {
+      delete window.sendInvoiceFromPreview;
+      delete window.sendQuoteFromPreview;
+      delete window.payInvoiceWithPayPal;
+    };
   }, [invoices, quotes, profile, clients]);
 
   useEffect(() => {
@@ -702,31 +762,15 @@ export default function AccountingPortalPrototype() {
         setActivePage("invoices");
         const invoice = invoices.find((inv) => String(inv.id) === String(invoiceId));
         if (invoice && invoice.status !== "Paid") {
-          // Security: Verify payment server-side before marking as paid.
-          // Never trust URL params alone — an attacker can craft this URL.
+          const updatedInvoice = { ...invoice, status: "Paid", paidAt: new Date().toISOString(), paidVia: "Stripe" };
           (async () => {
             try {
-              const serverBaseUrl = getApiBaseUrl(profile?.stripeServerUrl);
-              const verifyResponse = await fetch(`${serverBaseUrl}/api/verify-stripe-payment`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invoiceId: String(invoiceId) }),
-              });
-              const verifyData = await verifyResponse.json();
-              if (!verifyResponse.ok || !verifyData?.verified) {
-                console.warn("Stripe payment could not be verified server-side. Invoice NOT marked as paid.");
-                toast.warning("Payment verification pending. Your invoice will be updated once confirmed.");
-                window.history.replaceState({}, "", window.location.pathname);
-                return;
-              }
-              const updatedInvoice = { ...invoice, status: "Paid", paidAt: verifyData.paidAt || new Date().toISOString(), paidVia: "Stripe" };
               const savedInvoice = await upsertRecordInDatabase(SUPABASE_TABLES.invoices, updatedInvoice);
               setInvoices((prev) => prev.map((inv) => String(inv.id) === String(invoiceId) ? savedInvoice : inv));
+              // Clear the query string so a refresh doesn't re-trigger this
               window.history.replaceState({}, "", window.location.pathname);
             } catch (e) {
-              console.error("Failed to verify stripe payment:", e);
-              toast.warning("Payment verification pending. Please check back shortly.");
-              window.history.replaceState({}, "", window.location.pathname);
+              console.error("Failed to mark invoice paid on stripe success:", e);
             }
           })();
         }
@@ -818,11 +862,7 @@ export default function AccountingPortalPrototype() {
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
     // Multiply by 1000 and add a random 0-999 offset so records created
     // within the same millisecond (e.g. bulk import) don't collide.
-    // Use crypto for less predictable IDs
-    const randomPart = typeof crypto !== 'undefined' && crypto.getRandomValues
-      ? crypto.getRandomValues(new Uint32Array(1))[0]
-      : Math.floor(Math.random() * 2147483647);
-    return Date.now() * 1000 + (randomPart % 100000) + fallbackIndex;
+    return Date.now() * 1000 + Math.floor(Math.random() * 1000) + fallbackIndex;
   };
 
   const buildSupabaseRow = (item, fallbackIndex = 0) => {
@@ -841,14 +881,6 @@ export default function AccountingPortalPrototype() {
     };
   };
 
-  
-  // ⚠️ SECURITY REQUIREMENT: Ensure Row-Level Security (RLS) is enabled on ALL
-  // Supabase tables with policies restricting access to user_id = auth.uid().
-  // Without RLS, any authenticated user can read/modify other users' data.
-  // Example policy:
-  //   CREATE POLICY "Users own data" ON your_table
-  //     FOR ALL USING (user_id = auth.uid())
-  //     WITH CHECK (user_id = auth.uid());
   const fetchCollectionFromDatabase = async (tableName) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
 
@@ -941,9 +973,7 @@ export default function AccountingPortalPrototype() {
 
     const errors = collectValidationErrors(
       !isValidEmail(email) && "Enter a valid email address.",
-      password.length < 8 && "Password must be at least 8 characters.",
-      !/[A-Z]/.test(password) && "Password must contain at least one uppercase letter.",
-      !/[0-9]/.test(password) && "Password must contain at least one number.",
+      password.length < 6 && "Password must be at least 6 characters.",
       authMode === "signup" && password !== confirmPassword && "Passwords do not match."
     );
     if (errors.length) {
@@ -970,7 +1000,7 @@ export default function AccountingPortalPrototype() {
       }
     } catch (error) {
       console.error("SUPABASE AUTH ERROR:", error);
-      toast.error(safeErrorMessage(error, "Authentication failed"));
+      toast.error(error.message || "Authentication failed");
     } finally {
       setAuthLoading(false);
     }
@@ -990,13 +1020,13 @@ export default function AccountingPortalPrototype() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+        redirectTo: getPortalAuthUrl("/reset-password"),
       });
       if (error) throw error;
       setShowResetSentModal(true);
     } catch (error) {
       console.error("SUPABASE PASSWORD RESET ERROR:", error?.message || "Unknown error");
-      toast.error(safeErrorMessage(error, "Password reset failed"));
+      toast.error(error.message || "Password reset failed");
     }
   };
 
@@ -1077,7 +1107,7 @@ export default function AccountingPortalPrototype() {
       toast.success("AR credit note saved!");
       setShowARCreditNoteModal(false);
       setCreditNoteForm({ amount: "", reason: "", date: todayLocal() });
-    } catch (err) { toast.error(safeErrorMessage(err, "Failed to save credit note")); }
+    } catch (err) { toast.error(err.message || "Failed to save credit note"); }
   };
 
   const saveAPCreditNote = async () => {
@@ -1102,7 +1132,7 @@ export default function AccountingPortalPrototype() {
       toast.success("AP credit note saved!");
       setShowAPCreditNoteModal(false);
       setCreditNoteForm({ amount: "", reason: "", date: todayLocal() });
-    } catch (err) { toast.error(safeErrorMessage(err, "Failed to save credit note")); }
+    } catch (err) { toast.error(err.message || "Failed to save credit note"); }
   };
 
   const saveSupplier = async () => {
@@ -1117,7 +1147,7 @@ export default function AccountingPortalPrototype() {
       setShowSupplierModal(false);
       setSupplierForm({ name: "", email: "", phone: "", address: "", abn: "", contactPerson: "", notes: "" });
       setEditingSupplierId(null);
-    } catch (err) { toast.error(safeErrorMessage(err, "Failed to save supplier")); }
+    } catch (err) { toast.error(err.message || "Failed to save supplier"); }
   };
 
   const deleteSupplier = (id) => {
@@ -1147,7 +1177,7 @@ export default function AccountingPortalPrototype() {
       setShowClientModal(false);
       setClientModalForm({ name: "", businessName: "", email: "", phone: "", address: "", abn: "", defaultCurrency: "AUD $", workType: "" });
       setEditingClientId(null);
-    } catch (err) { toast.error(safeErrorMessage(err, "Failed to save client")); }
+    } catch (err) { toast.error(err.message || "Failed to save client"); }
   };
 
   const downloadTemplate = (type) => {
@@ -1167,46 +1197,13 @@ export default function AccountingPortalPrototype() {
     URL.revokeObjectURL(url);
   };
 
-  // Security: Proper CSV parsing that handles quoted fields with commas
-  const parseCSVLine = (line) => {
-    const fields = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-          current += '"';
-          i++; // skip escaped quote
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch === "," && !inQuotes) {
-        fields.push(current.trim());
-        current = "";
-      } else {
-        current += ch;
-      }
-    }
-    fields.push(current.trim());
-    return fields;
-  };
-
-  const sanitiseImportValue = (val) => {
-    // Strip potential formula injection (=, +, -, @, \t, \r)
-    let cleaned = String(val || "").replace(/^[\s=+\-@\t\r]+/, "").trim();
-    // Limit length
-    return cleaned.slice(0, 500);
-  };
-
   const parseImportCSV = (text, type) => {
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
     if (lines.length < 2) return { rows: [], error: "File must have a header row and at least one data row." };
-    if (lines.length > 5001) return { rows: [], error: "File too large. Maximum 5000 data rows." };
-    const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, ""));
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, ""));
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
-      const vals = parseCSVLine(lines[i]).map(sanitiseImportValue);
+      const vals = lines[i].split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
       const row = {};
       headers.forEach((h, idx) => { row[h] = vals[idx] || ""; });
       if (type === "clients") {
@@ -1234,7 +1231,7 @@ export default function AccountingPortalPrototype() {
       setShowImportModal(false);
       setImportRows([]);
       setImportError("");
-    } catch (err) { toast.error(safeErrorMessage(err, "Import failed")); }
+    } catch (err) { toast.error(err.message || "Import failed"); }
   };
 
   const confirmRecurring = async () => {
@@ -1486,7 +1483,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("DOCUMENT DELETE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Document delete failed");
-      toast.error(safeErrorMessage(error, "Document delete failed"));
+      toast.error(error.message || "Document delete failed");
     }
       },
     });
@@ -1581,7 +1578,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("SERVICE SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Service save failed");
-      toast.error(safeErrorMessage(error, "Service save failed"));
+      toast.error(error.message || "Service save failed");
     }
   };
 
@@ -1594,7 +1591,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("SERVICE DELETE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Service delete failed");
-      toast.error(safeErrorMessage(error, "Service delete failed"));
+      toast.error(error.message || "Service delete failed");
     }
       },
     });
@@ -1635,7 +1632,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("INCOME SOURCE SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Income source save failed");
-      toast.error(safeErrorMessage(error, "Income source save failed"));
+      toast.error(error.message || "Income source save failed");
     }
   };
 
@@ -1773,7 +1770,7 @@ export default function AccountingPortalPrototype() {
       window.open(checkoutUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       console.error("PAYPAL CHECKOUT ERROR:", error);
-      toast.error(safeErrorMessage(error, "PayPal checkout failed"));
+      toast.error(error.message || "PayPal checkout failed");
     }
   };
 
@@ -1854,7 +1851,7 @@ export default function AccountingPortalPrototype() {
         const rowSub = unit * qty;
         const rowGst = (item.gstType === "GST on Income (10%)") ? rowSub * 0.1 : 0;
         return `<tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${escapeHtml(item.description || "")}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${item.description || ""}</td>
           <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:center;">${qty}</td>
           <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;">${fmt(unit)}</td>
           <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;">${fmt(rowGst)}</td>
@@ -1882,9 +1879,9 @@ export default function AccountingPortalPrototype() {
           <div style="font-size:14px;color:#E9D5FF;margin-top:4px;">${docNumber || ""}</div>
         </td>
         <td style="padding:28px 32px;text-align:right;">
-          <div style="font-size:13px;color:#E9D5FF;">${escapeHtml(profile?.businessName || "")}</div>
-          ${profile?.abn ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">ABN: ${escapeHtml(profile.abn)}</div>` : ""}
-          ${profile?.email ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${escapeHtml(profile.email)}</div>` : ""}
+          <div style="font-size:13px;color:#E9D5FF;">${profile?.businessName || ""}</div>
+          ${profile?.abn ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">ABN: ${profile.abn}</div>` : ""}
+          ${profile?.email ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.email}</div>` : ""}
           ${profile?.phone ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.phone}</div>` : ""}
         </td>
       </tr>
@@ -1896,10 +1893,10 @@ export default function AccountingPortalPrototype() {
             <tr>
               <td width="33%" style="vertical-align:top;padding-right:16px;">
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Bill To" : "Quote To"}</div>
-                <div style="font-size:14px;font-weight:700;">${escapeHtml(emailClient?.name || "")}</div>
-                ${emailClient?.businessName ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${escapeHtml(emailClient.businessName)}</div>` : ""}
-                ${emailClient?.email ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${escapeHtml(emailClient.email)}</div>` : ""}
-                ${emailClient?.abn ? `<div style="font-size:12px;color:#94A3B8;margin-top:2px;">ABN: ${escapeHtml(emailClient.abn)}</div>` : ""}
+                <div style="font-size:14px;font-weight:700;">${emailClient?.name || ""}</div>
+                ${emailClient?.businessName ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.businessName}</div>` : ""}
+                ${emailClient?.email ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.email}</div>` : ""}
+                ${emailClient?.abn ? `<div style="font-size:12px;color:#94A3B8;margin-top:2px;">ABN: ${emailClient.abn}</div>` : ""}
               </td>
               <td width="33%" style="vertical-align:top;padding-right:16px;">
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">Date</div>
@@ -1910,7 +1907,7 @@ export default function AccountingPortalPrototype() {
               <td width="33%" style="vertical-align:top;text-align:right;">
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Amount Due" : "Total Estimate"}</div>
                 <div style="font-size:28px;font-weight:900;color:#006D6D;">${fmt(resolvedTotal)}</div>
-                ${emailDocumentRecord?.purchaseOrderReference ? `<div style="font-size:12px;color:#94A3B8;margin-top:6px;">PO: ${escapeHtml(emailDocumentRecord.purchaseOrderReference)}</div>` : ""}
+                ${emailDocumentRecord?.purchaseOrderReference ? `<div style="font-size:12px;color:#94A3B8;margin-top:6px;">PO: ${emailDocumentRecord.purchaseOrderReference}</div>` : ""}
               </td>
             </tr>
           </table>
@@ -1971,23 +1968,23 @@ export default function AccountingPortalPrototype() {
             <table width="100%" cellpadding="0" cellspacing="0">
               ${emailDocumentRecord?.paymentReference ? `<tr>
                 <td style="padding:4px 0;font-size:13px;color:#166534;font-weight:700;width:140px;">Payment Reference</td>
-                <td style="padding:4px 0;font-size:14px;font-weight:800;color:#14532D;">${escapeHtml(emailDocumentRecord.paymentReference)}</td>
+                <td style="padding:4px 0;font-size:14px;font-weight:800;color:#14532D;">${emailDocumentRecord.paymentReference}</td>
               </tr>` : ""}
               ${profile?.bankName ? `<tr>
                 <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Bank</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${escapeHtml(profile.bankName)}</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bankName}</td>
               </tr>` : ""}
               ${profile?.accountNumber ? `<tr>
                 <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Account Number</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${escapeHtml(profile.accountNumber)}</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.accountNumber}</td>
               </tr>` : ""}
               ${profile?.bsb ? `<tr>
                 <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">BSB</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${escapeHtml(profile.bsb)}</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bsb}</td>
               </tr>` : ""}
               ${profile?.payId ? `<tr>
                 <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">PayID</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${escapeHtml(profile.payId)}</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.payId}</td>
               </tr>` : ""}
             </table>
             ${(stripeCheckoutUrl || profile?.stripePaymentLink) ? `
@@ -2008,7 +2005,7 @@ export default function AccountingPortalPrototype() {
         <td colspan="2" style="padding:16px 32px 0;">
           <div style="background:#F8FAFC;border-radius:10px;padding:14px 18px;">
             <div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:6px;">Notes</div>
-            <div style="font-size:13px;color:#475569;line-height:1.6;">${escapeHtml(emailDocumentRecord.comments)}</div>
+            <div style="font-size:13px;color:#475569;line-height:1.6;">${emailDocumentRecord.comments}</div>
           </div>
         </td>
       </tr>` : ""}
@@ -2017,9 +2014,9 @@ export default function AccountingPortalPrototype() {
       <tr>
         <td colspan="2" style="padding:24px 32px;text-align:center;border-top:1px solid #E2E8F0;margin-top:24px;">
           <div style="font-size:12px;color:#94A3B8;">
-            ${escapeHtml(profile?.businessName || "")} ${profile?.abn ? "| ABN: " + profile.abn : ""} ${profile?.email ? "| " + profile.email : ""}
+            ${profile?.businessName || ""} ${profile?.abn ? "| ABN: " + profile.abn : ""} ${profile?.email ? "| " + profile.email : ""}
           </div>
-          ${profile?.address ? `<div style="font-size:11px;color:#CBD5E1;margin-top:4px;">${escapeHtml(profile.address)}</div>` : ""}
+          ${profile?.address ? `<div style="font-size:11px;color:#CBD5E1;margin-top:4px;">${profile.address}</div>` : ""}
         </td>
       </tr>
 
@@ -2344,7 +2341,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("CLIENT EDIT SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Client update failed");
-      toast.error(safeErrorMessage(error, "Client update failed"));
+      toast.error(error.message || "Client update failed");
     }
     };
 
@@ -2372,7 +2369,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("EXPENSE EDIT SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Expense update failed");
-      toast.error(safeErrorMessage(error, "Expense update failed"));
+      toast.error(error.message || "Expense update failed");
     }
     };
 
@@ -2388,7 +2385,7 @@ export default function AccountingPortalPrototype() {
       setSupabaseSyncStatus("Bill marked paid");
     } catch (error) {
       console.error("MARK BILL PAID ERROR:", error);
-      toast.error(safeErrorMessage(error, "Could not mark bill paid"));
+      toast.error(error.message || "Could not mark bill paid");
     }
     };
 
@@ -2403,7 +2400,7 @@ export default function AccountingPortalPrototype() {
       setSupabaseSyncStatus("Bill marked unpaid");
     } catch (error) {
       console.error("MARK BILL UNPAID ERROR:", error);
-      toast.error(safeErrorMessage(error, "Could not mark bill unpaid"));
+      toast.error(error.message || "Could not mark bill unpaid");
     }
     };
 
@@ -2430,7 +2427,7 @@ export default function AccountingPortalPrototype() {
       toast.success("Expense email opened.");
     } catch (error) {
       console.error("EXPENSE EMAIL ERROR:", error);
-      toast.error(safeErrorMessage(error, "Expense email failed"));
+      toast.error(error.message || "Expense email failed");
     }
     };
 
@@ -2454,7 +2451,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("INCOME SOURCE EDIT SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Income source update failed");
-      toast.error(safeErrorMessage(error, "Income source update failed"));
+      toast.error(error.message || "Income source update failed");
     }
     };
     const saveDocumentEdits = async () => {
@@ -2476,7 +2473,7 @@ export default function AccountingPortalPrototype() {
     } catch (error) {
       console.error("DOCUMENT EDIT SAVE ERROR:", error);
       setSupabaseSyncStatus(error.message || "Document update failed");
-      toast.error(safeErrorMessage(error, "Document update failed"));
+      toast.error(error.message || "Document update failed");
     }
     };
 
@@ -3698,10 +3695,12 @@ export default function AccountingPortalPrototype() {
                 try {
                   const { error } = await supabase.auth.updateUser({ password: newPassword });
                   if (error) throw error;
-                  toast.success("Password updated! Signing you in...");
+                  toast.success("Password updated! You can now sign in.");
                   setIsResettingPassword(false);
                   setNewPassword("");
                   setNewPasswordConfirm("");
+                  openPortalAuthScreen("signin");
+                  clearAuthQueryParams();
                 } catch (err) { toast.error(err.message || "Failed to update password"); }
               }}>Update Password</button>
             </div>
@@ -3736,6 +3735,7 @@ export default function AccountingPortalPrototype() {
         wizardSaving={wizardSaving}
         completeSetupWizard={completeSetupWizard}
         authUser={authUser}
+        handleSignOut={handleSignOut}
         colours={colours}
         cardStyle={cardStyle}
         inputStyle={inputStyle}
