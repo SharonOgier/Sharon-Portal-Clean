@@ -78,7 +78,7 @@ import {
 } from "./PortalDocumentBuilders";
 
 
-// --- Page components ----------------------------------------------------------
+// ─── Page components ──────────────────────────────────────────────────────────
 import DashboardPage        from "./pages/DashboardPage";
 import FinancialInsightsPage from "./pages/FinancialInsightsPage";
 import ClientsPage          from "./pages/ClientsPage";
@@ -94,7 +94,7 @@ import AuthPage             from "./pages/AuthPage";
 import BASReportPage        from "./pages/BASReportPage";
 import SettingsPage         from "./pages/SettingsPage";
 import ATOTaxFormPage       from "./ATOTaxFormPage";
-// -----------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 
 export default function AccountingPortalPrototype() {
@@ -258,7 +258,7 @@ export default function AccountingPortalPrototype() {
     startedAfterDate: false,
     hasEndDate: false,
   });
-  const [clientForm, setClientForm] = useState({ ...blankClient, sendToMe: true });
+  const [clientForm, setClientForm] = useState(blankClient);
 
   const blankLineItem = () => ({ id: Date.now() + Math.random(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" });
 
@@ -655,11 +655,9 @@ export default function AccountingPortalPrototype() {
   useEffect(() => {
     window.sendInvoiceFromPreview = sendInvoiceFromPreview;
     window.sendQuoteFromPreview = sendQuoteFromPreview;
-    window.payInvoiceWithPayPal = payInvoiceWithPayPal;
     return () => {
       delete window.sendInvoiceFromPreview;
       delete window.sendQuoteFromPreview;
-      delete window.payInvoiceWithPayPal;
     };
   }, [invoices, quotes, profile, clients]);
 
@@ -904,34 +902,17 @@ export default function AccountingPortalPrototype() {
       if (authMode === "signup") {
         const { data: signUpData, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-
-        if (signUpData?.session?.user) {
-          setAuthUser(signUpData.session.user);
-          setAuthReady(true);
-          setShowResetSentModal(false);
+        // If email confirmation is off, user is signed in immediately
+        if (signUpData?.session) {
           toast.success("Account created! Welcome to the portal.");
-          if (typeof window !== "undefined" && window.location.pathname !== "/portal") {
-            window.location.assign("/portal");
-          }
         } else {
+          // Email confirmation is on — ask them to confirm
           toast.success("Account created! Check your email to confirm, then sign in.");
           setAuthMode("signin");
         }
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-
-        const signedInUser = data?.session?.user || data?.user || null;
-        if (signedInUser) {
-          setAuthUser(signedInUser);
-          setAuthReady(true);
-          setShowResetSentModal(false);
-          clearAuthQueryParams();
-          if (typeof window !== "undefined" && window.location.pathname !== "/portal") {
-            window.location.assign("/portal");
-            return;
-          }
-        }
       }
     } catch (error) {
       console.error("SUPABASE AUTH ERROR:", error);
@@ -960,7 +941,7 @@ export default function AccountingPortalPrototype() {
       if (error) throw error;
       setShowResetSentModal(true);
     } catch (error) {
-      console.error("SUPABASE PASSWORD RESET ERROR:", error?.message || "Unknown error");
+      console.error("SUPABASE PASSWORD RESET ERROR:", error);
       toast.error(error.message || "Password reset failed");
     }
   };
@@ -1216,11 +1197,9 @@ export default function AccountingPortalPrototype() {
     if (!supabase || !authUser?.id) return;
     try {
       setSupabaseSyncStatus("Saving profile to Supabase database...");
-      // Strip base64 logo before saving -- too large for Supabase row
-      const { logoDataUrl: _logo, ...profileToSave } = profilePayload || {};
       const savedProfile = await upsertRecordInDatabase(SUPABASE_TABLES.profile, {
-        ...profileToSave,
-        id: profileToSave?.id || getStableProfileRowId(),
+        ...profilePayload,
+        id: profilePayload?.id || getStableProfileRowId(),
       });
 
       setProfile((prev) => ({
@@ -1273,8 +1252,8 @@ export default function AccountingPortalPrototype() {
       const failures = saveResults.filter((r) => !r.ok);
       if (failures.length) {
         const summary = failures.map((f) => `${f.name}: ${f.message}`).join("; ");
-        console.error("SUPABASE BULK SAVE -- partial failure:", summary);
-        setSupabaseSyncStatus(`Saved with errors -- ${summary}`);
+        console.error("SUPABASE BULK SAVE — partial failure:", summary);
+        setSupabaseSyncStatus(`Saved with errors — ${summary}`);
       } else {
         setSupabaseSyncStatus("All portal records saved to Supabase database");
       }
@@ -1645,83 +1624,21 @@ export default function AccountingPortalPrototype() {
     };
   };
 
-  const getResolvedPayPalBusinessEmail = () => {
-    const candidates = [
-      profile?.paypalBusinessEmail,
-      profile?.paypalEmail,
-      profile?.paypalPaymentLink,
-    ];
-
-    for (const candidate of candidates) {
-      const value = String(candidate || "").trim();
-      if (!value) continue;
-      if (/^https?:\/\//i.test(value)) continue;
-      if (isValidEmail(value)) return value;
-    }
-
-    return "";
-  };
-
-  const createPayPalOrderForInvoice = async (invoice) => {
-    const serverBaseUrl = getApiBaseUrl(profile?.stripeServerUrl);
-    const selectedClient = getClientById(invoice?.clientId) || {};
-    const rawTotal = safeNumber(
-      invoice?.total ?? invoice?.grandTotal ?? invoice?.invoiceTotal ?? invoice?.amount ?? invoice?.totalAmount
-    );
-    if (!rawTotal || rawTotal <= 0) {
-      throw new Error(`Invoice total could not be determined for ${invoice?.invoiceNumber || invoice?.id}. Please open and re-save the invoice.`);
-    }
-    const payload = {
-      invoiceId: invoice?.id,
-      invoiceNumber: invoice?.invoiceNumber,
-      customerName: selectedClient?.name || selectedClient?.businessName || "",
-      customerEmail: selectedClient?.email || "",
-      description: invoice?.description || `Invoice ${invoice?.invoiceNumber || invoice?.id || ""}`,
-      currency: String(invoice?.currencyCode || "AUD").toUpperCase(),
-      amount: Number(rawTotal.toFixed(2)),
-      total: Number(rawTotal.toFixed(2)),
-      successUrl: `${window.location.origin}?paypal=success&invoice=${encodeURIComponent(invoice?.invoiceNumber || "")}&invoiceId=${encodeURIComponent(String(invoice?.id || ""))}`,
-      cancelUrl: `${window.location.origin}?paypal=cancel&invoice=${encodeURIComponent(invoice?.invoiceNumber || "")}&invoiceId=${encodeURIComponent(String(invoice?.id || ""))}`,
-    };
-    let response;
-    try {
-      response = await fetch(`${serverBaseUrl}/api/create-paypal-order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      throw new Error(`Could not reach the server for PayPal. Check your backend deployment.`);
-    }
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error || "PayPal order creation failed");
-    if (!data?.url) throw new Error("PayPal checkout URL was not returned");
-    return data.url;
-  };
-
-  const payInvoiceWithPayPal = async (invoice) => {
-    try {
-      const checkoutUrl = await createPayPalOrderForInvoice(invoice);
-      window.open(checkoutUrl, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      console.error("PAYPAL CHECKOUT ERROR:", error);
-      toast.error(error.message || "PayPal checkout failed");
-    }
-  };
-
   const sendSavedDocumentEmail = async ({ documentType, documentRecord }) => {
   let emailDocumentRecord = { ...(documentRecord || {}) };
   let stripeCheckoutUrl = emailDocumentRecord?.stripeCheckoutUrl || "";
 
   const client = getClientById(emailDocumentRecord?.clientId);
 
-  // Always send to the client's email (if valid) and the logged-in user's email.
-  // We don't gate on sendToClient/sendToMe flags -- those are never set in the client form.
   const recipientList = Array.from(
     new Set(
       [
-        isValidEmail(client?.email) ? String(client.email).trim() : "",
-        isValidEmail(profile?.email) ? String(profile.email).trim() : "",
+        client?.sendToClient && isValidEmail(client?.email)
+          ? String(client.email).trim()
+          : "",
+        client?.sendToMe && isValidEmail(profile?.email)
+          ? String(profile.email).trim()
+          : "",
       ].filter(Boolean)
     )
   );
@@ -1764,216 +1681,119 @@ export default function AccountingPortalPrototype() {
     emailDocumentRecord?.totalAmount
   );
 
-  // PayPal URL is generated dynamically via /api/create-paypal-order -- not built statically
-  const paypalCheckoutUrl = "";
+  let invoiceHtml = "";
+  let quoteHtml = "";
 
-  // Build self-contained HTML email body -- no logo, no interactive buttons
-  const emailClient = getClientById(emailDocumentRecord?.clientId);
-  const emailLineItems = emailDocumentRecord?.lineItems || [];
-  const hasLines = emailLineItems.length > 0;
-  const isInvoice = documentType === "invoice";
-  const docNumber = isInvoice ? emailDocumentRecord?.invoiceNumber : emailDocumentRecord?.quoteNumber;
-  const docDate = isInvoice ? emailDocumentRecord?.invoiceDate : emailDocumentRecord?.quoteDate;
-  const docDueLabel = isInvoice ? "Due Date" : "Expiry Date";
-  const docDueValue = isInvoice ? emailDocumentRecord?.dueDate : emailDocumentRecord?.expiryDate;
-  const emailCurrency = emailDocumentRecord?.currencyCode || "AUD";
-  const fmt = (v) => formatCurrencyByCode(safeNumber(v), emailCurrency);
+  if (documentType === "invoice") {
+    invoiceHtml = buildInvoiceHtml(
+      emailDocumentRecord,
+      stripeCheckoutUrl || emailDocumentRecord?.stripeCheckoutUrl || "",
+      { allowEmail: false },
+      { profile, clients }
+    );
+  }
 
-  const lineRowsHtml = hasLines
-    ? emailLineItems.map((item) => {
-        const qty = Math.max(1, safeNumber(item.quantity || 1));
-        const unit = safeNumber(item.unitPrice);
-        const rowSub = unit * qty;
-        const rowGst = (item.gstType === "GST on Income (10%)") ? rowSub * 0.1 : 0;
-        return `<tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;">${item.description || ""}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:center;">${qty}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;">${fmt(unit)}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;">${fmt(rowGst)}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700;">${fmt(rowSub + rowGst)}</td>
-        </tr>`;
-      }).join("")
-    : `<tr><td colspan="5" style="padding:12px;color:#64748B;text-align:center;">No line items</td></tr>`;
+  if (documentType === "quote") {
+    try {
+      quoteHtml = buildQuoteHtml(
+        emailDocumentRecord,
+        { allowEmail: false },
+        { profile, clients }
+      );
+    } catch (error) {
+      console.error("buildQuoteHtml crashed:", error);
+      quoteHtml = "";
+    }
 
-  const emailBodyHtml = `<!doctype html>
+    if (!String(quoteHtml || "").trim()) {
+      console.warn("Using fallback quote HTML for PDF generation", {
+        quoteId: emailDocumentRecord?.id,
+        quoteNumber: emailDocumentRecord?.quoteNumber,
+        clientId: emailDocumentRecord?.clientId,
+      });
+
+      quoteHtml = `<!doctype html>
 <html>
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${isInvoice ? "Invoice" : "Quote"} ${docNumber || ""}</title>
+<meta charset="utf-8" />
+<title>Quote ${emailDocumentRecord?.quoteNumber || ""}</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
+.card { border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; }
+.title { font-size: 32px; font-weight: 900; color: #6A1B9A; margin-bottom: 18px; }
+.row { margin: 8px 0; }
+.label { font-weight: 700; }
+.total { margin-top: 20px; font-size: 20px; font-weight: 800; color: #006D6D; }
+</style>
 </head>
-<body style="margin:0;padding:0;background:#F8FAFC;font-family:Arial,Helvetica,sans-serif;color:#14202B;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;padding:32px 0;">
-  <tr><td align="center">
-    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;border:1px solid #E2E8F0;overflow:hidden;">
-
-      <!-- Header -->
-      <tr style="background:#6A1B9A;">
-        <td style="padding:28px 32px;">
-          <div style="font-size:26px;font-weight:900;color:#ffffff;">${isInvoice ? "INVOICE" : "QUOTE"}</div>
-          <div style="font-size:14px;color:#E9D5FF;margin-top:4px;">${docNumber || ""}</div>
-        </td>
-        <td style="padding:28px 32px;text-align:right;">
-          <div style="font-size:13px;color:#E9D5FF;">${profile?.businessName || ""}</div>
-          ${profile?.abn ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">ABN: ${profile.abn}</div>` : ""}
-          ${profile?.email ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.email}</div>` : ""}
-          ${profile?.phone ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.phone}</div>` : ""}
-        </td>
-      </tr>
-
-      <!-- From / To / Dates -->
-      <tr>
-        <td colspan="2" style="padding:24px 32px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td width="33%" style="vertical-align:top;padding-right:16px;">
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Bill To" : "Quote To"}</div>
-                <div style="font-size:14px;font-weight:700;">${emailClient?.name || ""}</div>
-                ${emailClient?.businessName ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.businessName}</div>` : ""}
-                ${emailClient?.email ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.email}</div>` : ""}
-                ${emailClient?.abn ? `<div style="font-size:12px;color:#94A3B8;margin-top:2px;">ABN: ${emailClient.abn}</div>` : ""}
-              </td>
-              <td width="33%" style="vertical-align:top;padding-right:16px;">
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">Date</div>
-                <div style="font-size:13px;">${formatDateAU(docDate)}</div>
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:4px;margin-top:12px;">${docDueLabel}</div>
-                <div style="font-size:13px;">${formatDateAU(docDueValue)}</div>
-              </td>
-              <td width="33%" style="vertical-align:top;text-align:right;">
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Amount Due" : "Total Estimate"}</div>
-                <div style="font-size:28px;font-weight:900;color:#006D6D;">${fmt(resolvedTotal)}</div>
-                ${emailDocumentRecord?.purchaseOrderReference ? `<div style="font-size:12px;color:#94A3B8;margin-top:6px;">PO: ${emailDocumentRecord.purchaseOrderReference}</div>` : ""}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-
-      <!-- Line Items -->
-      <tr>
-        <td colspan="2" style="padding:24px 32px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;">
-            <thead>
-              <tr style="background:#F8FAFC;">
-                <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Description</th>
-                <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Qty</th>
-                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Unit Price</th>
-                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">GST</th>
-                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Total</th>
-              </tr>
-            </thead>
-            <tbody>${lineRowsHtml}</tbody>
-          </table>
-        </td>
-      </tr>
-
-      <!-- Totals -->
-      <tr>
-        <td colspan="2" style="padding:16px 32px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td></td>
-              <td width="260" style="border-top:2px solid #E2E8F0;padding-top:12px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#64748B;">Subtotal (ex GST)</td>
-                    <td style="padding:4px 0;font-size:13px;text-align:right;">${fmt(safeNumber(emailDocumentRecord?.subtotal))}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:4px 0;font-size:13px;color:#64748B;">GST</td>
-                    <td style="padding:4px 0;font-size:13px;text-align:right;">${fmt(safeNumber(emailDocumentRecord?.gst))}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding:10px 0 4px;font-size:16px;font-weight:800;color:#006D6D;">${isInvoice ? "Total Due" : "Total Estimate"}</td>
-                    <td style="padding:10px 0 4px;font-size:16px;font-weight:800;color:#006D6D;text-align:right;">${fmt(resolvedTotal)}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-
-      <!-- Payment Details (invoices only) -->
-      ${isInvoice && (profile?.bankName || profile?.bsb || profile?.accountNumber || profile?.payId || profile?.stripePaymentLink || stripeCheckoutUrl || emailDocumentRecord?.paymentReference || true) ? `
-      <tr>
-        <td colspan="2" style="padding:16px 32px 0;">
-          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:18px 20px;">
-            <div style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;margin-bottom:12px;">How to Pay</div>
-            <table width="100%" cellpadding="0" cellspacing="0">
-              ${emailDocumentRecord?.paymentReference ? `<tr>
-                <td style="padding:4px 0;font-size:13px;color:#166534;font-weight:700;width:140px;">Payment Reference</td>
-                <td style="padding:4px 0;font-size:14px;font-weight:800;color:#14532D;">${emailDocumentRecord.paymentReference}</td>
-              </tr>` : ""}
-              ${profile?.bankName ? `<tr>
-                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Bank</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bankName}</td>
-              </tr>` : ""}
-              ${profile?.accountNumber ? `<tr>
-                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Account Number</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.accountNumber}</td>
-              </tr>` : ""}
-              ${profile?.bsb ? `<tr>
-                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">BSB</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bsb}</td>
-              </tr>` : ""}
-              ${profile?.payId ? `<tr>
-                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">PayID</td>
-                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.payId}</td>
-              </tr>` : ""}
-            </table>
-            ${(stripeCheckoutUrl || profile?.stripePaymentLink) ? `
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid #BBF7D0;">
-              ${(stripeCheckoutUrl || profile?.stripePaymentLink) ? `<a href="${stripeCheckoutUrl || profile.stripePaymentLink}" style="display:inline-block;background:#6A1B9A;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 28px;border-radius:8px;margin-right:10px;">Pay with Card</a>` : ""}
-            </div>` : ""}
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid #BBF7D0;">
-              <a href="${window.location.origin}?paypal=pay&invoiceId=${emailDocumentRecord?.id || ""}&invoice=${emailDocumentRecord?.invoiceNumber || ""}" style="display:inline-block;background:#003087;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 28px;border-radius:8px;">Pay with PayPal</a>
-            </div>
-          </div>
-        </td>
-      </tr>` : ""}
-
-
-      <!-- Comments -->
-      ${emailDocumentRecord?.comments ? `
-      <tr>
-        <td colspan="2" style="padding:16px 32px 0;">
-          <div style="background:#F8FAFC;border-radius:10px;padding:14px 18px;">
-            <div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:6px;">Notes</div>
-            <div style="font-size:13px;color:#475569;line-height:1.6;">${emailDocumentRecord.comments}</div>
-          </div>
-        </td>
-      </tr>` : ""}
-
-      <!-- Footer -->
-      <tr>
-        <td colspan="2" style="padding:24px 32px;text-align:center;border-top:1px solid #E2E8F0;margin-top:24px;">
-          <div style="font-size:12px;color:#94A3B8;">
-            ${profile?.businessName || ""} ${profile?.abn ? "| ABN: " + profile.abn : ""} ${profile?.email ? "| " + profile.email : ""}
-          </div>
-          ${profile?.address ? `<div style="font-size:11px;color:#CBD5E1;margin-top:4px;">${profile.address}</div>` : ""}
-        </td>
-      </tr>
-
-    </table>
-  </td></tr>
-</table>
+<body>
+  <div class="card">
+    <div class="title">QUOTE</div>
+    <div class="row"><span class="label">Business:</span> ${profile?.businessName || "Your Business"}</div>
+    <div class="row"><span class="label">Quote Number:</span> ${emailDocumentRecord?.quoteNumber || ""}</div>
+    <div class="row"><span class="label">Quote Date:</span> ${formatDateAU(emailDocumentRecord?.quoteDate)}</div>
+    <div class="row"><span class="label">Expiry Date:</span> ${formatDateAU(emailDocumentRecord?.expiryDate)}</div>
+    <div class="row"><span class="label">Client:</span> ${getClientName(emailDocumentRecord?.clientId)}</div>
+    <div class="row"><span class="label">Description:</span> ${emailDocumentRecord?.description || "Professional services"}</div>
+    <div class="row"><span class="label">Quantity:</span> ${safeNumber(emailDocumentRecord?.quantity || 1)}</div>
+    <div class="row"><span class="label">Subtotal:</span> ${formatCurrencyByCode(safeNumber(emailDocumentRecord?.subtotal), emailDocumentRecord?.currencyCode || "AUD")}</div>
+    <div class="row"><span class="label">GST:</span> ${formatCurrencyByCode(safeNumber(emailDocumentRecord?.gst), emailDocumentRecord?.currencyCode || "AUD")}</div>
+    <div class="total">Total Estimate: ${formatCurrencyByCode(resolvedTotal, emailDocumentRecord?.currencyCode || "AUD")}</div>
+  </div>
 </body>
 </html>`;
+    }
+  }
+
+  const emailBodyHtml =
+    documentType === "invoice"
+      ? invoiceHtml
+      : buildQuoteEmailHtml(emailDocumentRecord, { profile, clients });
 
   const payload = {
     to: recipientList,
-    subject: isInvoice
-      ? `Invoice ${docNumber || ""} from ${profile?.businessName || "Your Business"}`
-      : `Quote ${docNumber || ""} from ${profile?.businessName || "Your Business"}`,
-    html: emailBodyHtml,
-    text: isInvoice
-      ? `Please find your invoice ${docNumber || ""} from ${profile?.businessName || "Your Business"} for ${fmt(resolvedTotal)}.`
-      : `Please find your quote ${docNumber || ""} from ${profile?.businessName || "Your Business"} for ${fmt(resolvedTotal)}.`,
-    replyTo: profile?.email || "",
+    subject:
+      documentType === "invoice"
+        ? `Invoice ${emailDocumentRecord?.invoiceNumber || ""} from ${profile.businessName || "Your Business"}`
+        : `Quote ${emailDocumentRecord?.quoteNumber || ""} from ${profile.businessName || "Your Business"}`,
+    customerName: getClientName(emailDocumentRecord?.clientId),
+    clientName: getClientById(emailDocumentRecord?.clientId)?.name || "",
+    clientEmail: getClientById(emailDocumentRecord?.clientId)?.email || "",
+    businessName: profile?.businessName || "",
+    businessAddress: profile?.address || "",
+    businessEmail: profile?.email || "",
+    businessPhone: profile?.phone || "",
+    abn: profile?.abn || "",
+    logoDataUrl: profile?.logoDataUrl || "",
     documentType,
+    html: emailBodyHtml,
+    documentHtml:
+      documentType === "quote"
+        ? (quoteHtml || emailBodyHtml)
+        : (invoiceHtml || emailBodyHtml),
+    quoteHtml: documentType === "quote" ? (quoteHtml || emailBodyHtml) : "",
+    invoiceHtml: documentType === "invoice" ? (invoiceHtml || emailBodyHtml) : "",
+    text: `Please see your ${documentType} below in the email body.`,
+    filename: `${documentType}-${emailDocumentRecord?.invoiceNumber || emailDocumentRecord?.quoteNumber || "document"}.pdf`,
+    replyTo: profile?.email || "",
+    number:
+      documentType === "invoice"
+        ? emailDocumentRecord?.invoiceNumber || ""
+        : emailDocumentRecord?.quoteNumber || "",
     invoiceNumber: emailDocumentRecord?.invoiceNumber || "",
     quoteNumber: emailDocumentRecord?.quoteNumber || "",
+    invoiceDate: emailDocumentRecord?.invoiceDate || "",
+    dueDate: emailDocumentRecord?.dueDate || "",
+    quoteDate: emailDocumentRecord?.quoteDate || "",
+    expiryDate: emailDocumentRecord?.expiryDate || "",
+    description: emailDocumentRecord?.description || "",
+    comments: emailDocumentRecord?.comments || "",
+    quantity: safeNumber(emailDocumentRecord?.quantity || 1),
+    subtotal: safeNumber(emailDocumentRecord?.subtotal),
+    gst: safeNumber(emailDocumentRecord?.gst),
+    total: resolvedTotal,
+    currencyCode: emailDocumentRecord?.currencyCode || "AUD",
+    hidePhoneNumber: Boolean(emailDocumentRecord?.hidePhoneNumber),
     stripeCheckoutUrl: stripeCheckoutUrl || emailDocumentRecord?.stripeCheckoutUrl || "",
   };
 
@@ -2429,7 +2249,7 @@ export default function AccountingPortalPrototype() {
       const savedClient = await upsertRecordInDatabase(SUPABASE_TABLES.clients, payload);
       setClients((prev) => [...prev, savedClient]);
       setSupabaseSyncStatus("Client saved to Supabase database");
-      setClientForm({ ...blankClient, sendToMe: true });
+      setClientForm(blankClient);
       toast.success("Client saved!");
     } catch (error) {
       console.error("CLIENT SAVE ERROR:", error);
@@ -2716,7 +2536,7 @@ export default function AccountingPortalPrototype() {
       const savedQuote = await upsertRecordInDatabase(SUPABASE_TABLES.quotes, acceptedQuote);
       setQuotes((prev) => prev.map((q) => q.id === quote.id ? savedQuote : q));
 
-      // 2. Build the invoice payload from the quote -- preserve all line items, amounts, client
+      // 2. Build the invoice payload from the quote — preserve all line items, amounts, client
       const invoiceNumber = nextNumber(profile.invoicePrefix, invoices, "invoiceNumber");
       const invoiceDate = todayLocal();
       const dueDate = addDays(invoiceDate, safeNumber(profile.paymentTermsDays) || 14);
@@ -2806,17 +2626,12 @@ export default function AccountingPortalPrototype() {
         );
         setSupabaseSyncStatus(result.message || "Invoice emailed");
         setStatus(result.message || "Invoice emailed.", "#166534");
-        toast.success(result.message || "Invoice emailed successfully!");
       } else {
-        const failMsg = result?.message || "Could not send invoice.";
-        setStatus(failMsg, "#B42318");
-        toast.error(failMsg);
+        setStatus(result?.message || "Could not send invoice.", "#B42318");
       }
     } catch (error) {
       console.error("PREVIEW INVOICE EMAIL ERROR:", error);
-      const errMsg = `Email failed: ${error.message || "Unknown error"}`;
-      setStatus(errMsg, "#B42318");
-      toast.error(errMsg);
+      setStatus(`Send failed: ${error.message || "Unknown error"}`, "#B42318");
     } finally {
       if (emailButton) {
         emailButton.disabled = false;
@@ -2869,17 +2684,12 @@ export default function AccountingPortalPrototype() {
         );
         setSupabaseSyncStatus(result.message || "Quote emailed");
         setStatus(result.message || "Quote emailed.", "#166534");
-        toast.success(result.message || "Quote emailed successfully!");
       } else {
-        const failMsg = result?.message || "Could not send quote.";
-        setStatus(failMsg, "#B42318");
-        toast.error(failMsg);
+        setStatus(result?.message || "Could not send quote.", "#B42318");
       }
     } catch (error) {
       console.error("PREVIEW QUOTE EMAIL ERROR:", error);
-      const errMsg = `Email failed: ${error.message || "Unknown error"}`;
-      setStatus(errMsg, "#B42318");
-      toast.error(errMsg);
+      setStatus(`Send failed: ${error.message || "Unknown error"}`, "#B42318");
     } finally {
       if (emailButton) {
         emailButton.disabled = false;
@@ -2900,44 +2710,6 @@ export default function AccountingPortalPrototype() {
     const w = window.open("", "_blank");
     if (!w) return;
     writeQuotePreviewToWindow(w, quote, { allowEmail: true });
-    };
-
-    const saveBill = async ({ totalAmt, totalGst, clear } = {}) => {
-    if (clear) {
-      setExpenseForm({ date: todayLocal(), dueDate: addDaysEOM(todayLocal()), supplier: "", category: "", description: "", amount: "", expenseType: "", workType: profile.workType, receiptFileName: "", receiptUrl: "" });
-      setBillLineItems([blankBillLine()]);
-      setBillWizardStep(1);
-      return;
-    }
-    if (!expenseForm.supplier) { toast.warning("Supplier name is required"); return; }
-    if (!totalAmt || totalAmt <= 0) { toast.warning("Add at least one line item with an amount"); return; }
-    setSavingBill(true);
-    try {
-      const primaryCategory = billLineItems.find((l) => l.category)?.category || "Other";
-      const combinedDesc = billLineItems.map((l) => l.description).filter(Boolean).join("; ");
-      const payload = {
-        ...expenseForm,
-        category: primaryCategory,
-        description: combinedDesc,
-        amount: totalAmt,
-        gst: totalGst || 0,
-        billLineItems,
-        expenseType: "Bill / Payable",
-        isPaid: false,
-        paidAt: "",
-      };
-      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.expenses, payload);
-      setExpenses((prev) => [...prev, saved]);
-      toast.success("Bill saved!");
-      setExpenseForm({ date: todayLocal(), dueDate: addDaysEOM(todayLocal()), supplier: "", category: "", description: "", amount: "", expenseType: "", workType: profile.workType, receiptFileName: "", receiptUrl: "" });
-      setBillLineItems([blankBillLine()]);
-      setBillWizardStep(1);
-    } catch (err) {
-      console.error("BILL SAVE ERROR:", err);
-      toast.error(err.message || "Bill save failed");
-    } finally {
-      setSavingBill(false);
-    }
     };
 
     const saveExpense = async () => {
@@ -3279,7 +3051,7 @@ export default function AccountingPortalPrototype() {
       console.error("STRIPE PREVIEW ERROR:", error);
     }
 
-    writeInvoicePreviewToWindow(w, previewInvoice, stripeCheckoutUrl, { allowEmail: true }, { profile, clients, serverBaseUrl: getApiBaseUrl(profile?.stripeServerUrl) });
+    writeInvoicePreviewToWindow(w, previewInvoice, stripeCheckoutUrl, { allowEmail: true }, { profile, clients });
     w.simulateInvoicePayment = () => simulateInvoicePayment(invoice.id);
     };
 
@@ -3327,7 +3099,7 @@ export default function AccountingPortalPrototype() {
       stripeCheckoutUrl,
     };
 
-    writeInvoicePreviewToWindow(w, previewInvoiceWithStripe, stripeCheckoutUrl, { allowEmail: true }, { profile, clients, serverBaseUrl: getApiBaseUrl(profile?.stripeServerUrl) });
+    writeInvoicePreviewToWindow(w, previewInvoiceWithStripe, stripeCheckoutUrl, { allowEmail: true }, { profile, clients });
     w.simulateInvoicePayment = () => simulateInvoicePayment(previewInvoice.id);
     };
 
@@ -3453,7 +3225,7 @@ export default function AccountingPortalPrototype() {
         type: "Invoice",
         sortDate: invoice.paidAt || invoice.invoiceDate || "",
         date: formatDateAU(invoice.paidAt || invoice.invoiceDate),
-        label: `${invoice.invoiceNumber || "Invoice"} . ${getClientName(invoice.clientId)}`,
+        label: `${invoice.invoiceNumber || "Invoice"} · ${getClientName(invoice.clientId)}`,
         caption: `${invoice.status || "Draft"} invoice`,
         value: currency(invoice.total),
       }));
@@ -3588,23 +3360,7 @@ export default function AccountingPortalPrototype() {
     }
 
     if (!authUser) {
-    return (
-      <AuthPage
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authForm={authForm}
-        setAuthForm={setAuthForm}
-        authLoading={authLoading}
-        handleAuthSubmit={handleAuthSubmit}
-        handlePasswordReset={handlePasswordReset}
-        colours={colours}
-        cardStyle={cardStyle}
-        inputStyle={inputStyle}
-        labelStyle={labelStyle}
-        buttonPrimary={buttonPrimary}
-        buttonSecondary={buttonSecondary}
-      />
-    );
+    return renderAuthScreen();
     }
 
     if (isResettingPassword) {
@@ -3661,28 +3417,14 @@ export default function AccountingPortalPrototype() {
     }
 
     if (!setupComplete) {
-    return (
-      <SetupWizardPage
-        wizardForm={wizardForm}
-        setWizardForm={setWizardForm}
-        wizardSaving={wizardSaving}
-        completeSetupWizard={completeSetupWizard}
-        authUser={authUser}
-        colours={colours}
-        cardStyle={cardStyle}
-        inputStyle={inputStyle}
-        labelStyle={labelStyle}
-        buttonPrimary={buttonPrimary}
-        buttonSecondary={buttonSecondary}
-      />
-    );
+    return renderSetupWizard();
     }
 
     if (profile?.accountStatus === "closed") {
     return (
       <div style={{ minHeight: "100vh", background: colours.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "sans-serif" }}>
         <div style={{ maxWidth: 480, width: "100%", textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>[locked]</div>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: colours.text, marginBottom: 10 }}>Account closed</div>
           <div style={{ fontSize: 15, color: colours.muted, lineHeight: 1.7, marginBottom: 28 }}>
             Your account has been closed. Your data is safe and your account can be reactivated at any time.
@@ -3980,18 +3722,11 @@ export default function AccountingPortalPrototype() {
               saveARCreditNote={saveARCreditNote}
               createStripeCheckoutForInvoice={createStripeCheckoutForInvoice}
               payInvoiceWithStripe={payInvoiceWithStripe}
-                  payInvoiceWithPayPal={payInvoiceWithPayPal}
               getClientName={getClientName} getClientById={getClientById}
               clientIsGstExempt={clientIsGstExempt} gstAppliesToClient={gstAppliesToClient}
               calculateFormGst={calculateFormGst} computeLineItemTotals={computeLineItemTotals}
               getDocumentBusinessName={getDocumentBusinessName} getDocumentAddress={getDocumentAddress}
               invoiceAllocations={invoiceAllocations} totals={totals}
-              calculateAdjustmentValues={calculateAdjustmentValues}
-              sendInvoiceFromPreview={sendInvoiceFromPreview}
-              setClientModalForm={setClientModalForm} setEditingClientId={setEditingClientId}
-              setShowClientModal={setShowClientModal} setImportType={setImportType}
-              setImportRows={setImportRows} setImportError={setImportError}
-              setShowImportModal={setShowImportModal}
             />}
             {activePage === "quotes" && <QuotesPage
               profile={profile} clients={clients} invoices={invoices}
@@ -4017,14 +3752,6 @@ export default function AccountingPortalPrototype() {
               getClientName={getClientName} getClientById={getClientById}
               clientIsGstExempt={clientIsGstExempt} gstAppliesToClient={gstAppliesToClient}
               calculateFormGst={calculateFormGst} computeLineItemTotals={computeLineItemTotals}
-              calculateAdjustmentValues={calculateAdjustmentValues}
-              sendQuoteFromPreview={sendQuoteFromPreview}
-              convertQuoteToInvoice={convertQuoteToInvoice}
-              openQuotePreview={openQuotePreview}
-              setClientModalForm={setClientModalForm} setEditingClientId={setEditingClientId}
-              setShowClientModal={setShowClientModal} setImportType={setImportType}
-              setImportRows={setImportRows} setImportError={setImportError}
-              setShowImportModal={setShowImportModal}
             />}
             {activePage === "clients" && <ClientsPage
               profile={profile} clients={clients} invoices={invoices}
@@ -4046,12 +3773,6 @@ export default function AccountingPortalPrototype() {
               confirmImport={confirmImport} downloadTemplate={downloadTemplate}
               parseImportCSV={parseImportCSV} openClientEditor={openClientEditor}
               blankClient={blankClient}
-              clientForm={clientForm} setClientForm={setClientForm}
-              saveClient={saveClient}
-              clientEditorOpen={clientEditorOpen} clientEditorForm={clientEditorForm}
-              setClientEditorForm={setClientEditorForm}
-              closeClientEditor={closeClientEditor} saveClientEdits={saveClientEdits}
-              todayLocal={todayLocal}
             />}
             {activePage === "services" && <ServicesPage
               services={services} serviceSearch={serviceSearch} setServiceSearch={setServiceSearch}
@@ -4125,14 +3846,6 @@ export default function AccountingPortalPrototype() {
               saveSupplier={saveSupplier} deleteSupplier={deleteSupplier}
               saveAPCreditNote={saveAPCreditNote}
               getClientName={getClientName} totals={totals}
-              blankBillLine={blankBillLine} saveBill={saveBill}
-              openExpenseEditor={openExpenseEditor}
-              expenseEditorOpen={expenseEditorOpen} expenseEditorForm={expenseEditorForm}
-              setExpenseEditorForm={setExpenseEditorForm}
-              closeExpenseEditor={closeExpenseEditor} saveExpenseEdits={saveExpenseEdits}
-              savingExpenseEdits={savingExpense}
-              setImportType={setImportType} setImportRows={setImportRows}
-              setImportError={setImportError} setShowImportModal={setShowImportModal}
             />}
             {activePage === "income sources" && <IncomeSourcesPage
               incomeSources={incomeSources}
@@ -4152,10 +3865,6 @@ export default function AccountingPortalPrototype() {
               SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
               MiniBarChart={MiniBarChart} IncomeSourceModal={IncomeSourceModal}
               saveIncomeSource={saveIncomeSource} deleteIncomeSource={deleteIncomeSource}
-              openIncomeSourceEditor={openIncomeSourceEditor}
-              closeIncomeSourceEditor={closeIncomeSourceEditor}
-              saveIncomeSourceEdits={saveIncomeSourceEdits}
-              savingIncomeSourceEdits={savingIncomeSource}
             />}
             {activePage === "documents" && <DocumentsPage
               documents={documents} documentFile={documentFile} setDocumentFile={setDocumentFile}
@@ -4197,8 +3906,7 @@ export default function AccountingPortalPrototype() {
                   buttonPrimary={buttonPrimary} inputStyle={inputStyle} labelStyle={labelStyle}
                   currency={currency} formatDateAU={formatDateAU} safeNumber={safeNumber}
                   DashboardHero={DashboardHero} InsightChip={InsightChip}
-                  MetricCard={MetricCard} SectionCard={SectionCard} SummaryBox={SummaryBox}
-                  buttonSecondary={buttonSecondary}
+                  SectionCard={SectionCard} SummaryBox={SummaryBox}
                   setActivePage={setActivePage}
                 />
               </div>
@@ -4330,11 +4038,11 @@ export default function AccountingPortalPrototype() {
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       {confirmModal}
 
-      {/* -- Password Reset Sent Modal -- */}
+      {/* ── Password Reset Sent Modal ── */}
       {showResetSentModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 36, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", textAlign: "center", fontFamily: "sans-serif" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>[email]</div>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: "#14202B", marginBottom: 12 }}>Check your email</div>
             <div style={{ fontSize: 14, color: "#64748B", lineHeight: 1.7, marginBottom: 8 }}>
               A password reset link has been sent to
@@ -4353,7 +4061,7 @@ export default function AccountingPortalPrototype() {
         </div>
       )}
 
-      {/* -- Import Modal -- */}
+      {/* ── Import Modal ── */}
       {showImportModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99993, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 580, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif", maxHeight: "90vh", overflowY: "auto" }}>
@@ -4373,17 +4081,17 @@ export default function AccountingPortalPrototype() {
 
             {/* How to section */}
             <div style={{ background: colours.lightPurple, borderRadius: 12, padding: 16, marginBottom: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: colours.purple, marginBottom: 10 }}>[clipboard] How to import</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: colours.purple, marginBottom: 10 }}>📋 How to import</div>
               <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: colours.text, lineHeight: 2 }}>
                 <li>Click <strong>Download Template</strong> below to get the Excel/CSV file</li>
                 <li>Open it in Excel or Google Sheets</li>
-                <li>Fill in your {importType} -- <strong>Name is required</strong>, all other columns are optional</li>
-                <li>Save as <strong>CSV</strong> (File - Save As - CSV)</li>
+                <li>Fill in your {importType} — <strong>Name is required</strong>, all other columns are optional</li>
+                <li>Save as <strong>CSV</strong> (File → Save As → CSV)</li>
                 <li>Click <strong>Choose File</strong> below and select your saved CSV</li>
                 <li>Review the preview, then click <strong>Confirm Import</strong></li>
               </ol>
               <div style={{ marginTop: 12, fontSize: 12, color: colours.muted }}>
-                (i) Duplicates are skipped automatically -- existing {importType} with the same name won't be overwritten.
+                ℹ️ Duplicates are skipped automatically — existing {importType} with the same name won't be overwritten.
               </div>
             </div>
 
@@ -4405,7 +4113,7 @@ export default function AccountingPortalPrototype() {
             {/* Download template button */}
             <button onClick={() => downloadTemplate(importType)}
               style={{ ...buttonSecondary, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-              Download {importType === "clients" ? "Clients" : "Suppliers"} Template
+              ⬇ Download {importType === "clients" ? "Clients" : "Suppliers"} Template
             </button>
 
             {/* File upload */}
@@ -4433,14 +4141,14 @@ export default function AccountingPortalPrototype() {
             {/* Preview */}
             {importRows.length > 0 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: colours.text, marginBottom: 8 }}>Preview -- {importRows.length} row{importRows.length !== 1 ? "s" : ""} ready to import</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: colours.text, marginBottom: 8 }}>Preview — {importRows.length} row{importRows.length !== 1 ? "s" : ""} ready to import</div>
                 <div style={{ maxHeight: 200, overflowY: "auto", border: `1px solid ${colours.border}`, borderRadius: 10 }}>
                   {importRows.slice(0, 10).map((row, i) => (
                     <div key={i} style={{ padding: "10px 14px", borderBottom: `1px solid ${colours.border}`, fontSize: 13 }}>
                       <strong>{row.name}</strong>
-                      {row.businessName && <span style={{ color: colours.muted }}> -- {row.businessName}</span>}
-                      {row.email && <span style={{ color: colours.muted }}> . {row.email}</span>}
-                      {row.phone && <span style={{ color: colours.muted }}> . {row.phone}</span>}
+                      {row.businessName && <span style={{ color: colours.muted }}> — {row.businessName}</span>}
+                      {row.email && <span style={{ color: colours.muted }}> · {row.email}</span>}
+                      {row.phone && <span style={{ color: colours.muted }}> · {row.phone}</span>}
                     </div>
                   ))}
                   {importRows.length > 10 && <div style={{ padding: "8px 14px", fontSize: 12, color: colours.muted }}>...and {importRows.length - 10} more</div>}
@@ -4462,7 +4170,7 @@ export default function AccountingPortalPrototype() {
         </div>
       )}
 
-      {/* -- Client Modal -- */}
+      {/* ── Client Modal ── */}
       {showClientModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99994, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
@@ -4494,8 +4202,8 @@ export default function AccountingPortalPrototype() {
                   <option value="AUD $">AUD $</option>
                   <option value="USD $">USD $</option>
                   <option value="NZD $">NZD $</option>
-                  <option value="GBP">GBP</option>
-                  <option value="EUR">EUR</option>
+                  <option value="GBP £">GBP £</option>
+                  <option value="EUR €">EUR €</option>
                 </select>
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
@@ -4519,7 +4227,7 @@ export default function AccountingPortalPrototype() {
         </div>
       )}
 
-      {/* -- Supplier Modal -- */}
+      {/* ── Supplier Modal ── */}
       {showSupplierModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99995, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
@@ -4566,13 +4274,13 @@ export default function AccountingPortalPrototype() {
         </div>
       )}
 
-      {/* -- AR Credit Note Modal -- */}
+      {/* ── AR Credit Note Modal ── */}
       {showARCreditNoteModal && creditNoteSource && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99996, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: colours.text, marginBottom: 4 }}>AR Credit Note</div>
             <div style={{ fontSize: 13, color: colours.muted, marginBottom: 20 }}>
-              Against invoice <strong>{creditNoteSource.invoiceNumber || creditNoteSource.id}</strong> -- {getClientName(creditNoteSource.clientId)}
+              Against invoice <strong>{creditNoteSource.invoiceNumber || creditNoteSource.id}</strong> — {getClientName(creditNoteSource.clientId)}
             </div>
             <div style={{ display: "grid", gap: 14 }}>
               <div>
@@ -4603,7 +4311,7 @@ export default function AccountingPortalPrototype() {
         </div>
       )}
 
-      {/* -- AP Credit Note Modal -- */}
+      {/* ── AP Credit Note Modal ── */}
       {showAPCreditNoteModal && creditNoteSource && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99996, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
@@ -4639,12 +4347,12 @@ export default function AccountingPortalPrototype() {
           </div>
         </div>
       )}
-      {/* -- Recurring Invoices Modal -- */}
+      {/* ── Recurring Invoices Modal ── */}
       {showRecurringModal && recurringDue.length > 0 && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99996, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 500, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div style={{ fontSize: 28 }}>[repeat]</div>
+              <div style={{ fontSize: 28 }}>🔁</div>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: "#14202B" }}>Recurring Invoices Due</div>
                 <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>{recurringDue.length} invoice{recurringDue.length !== 1 ? "s" : ""} ready to be created</div>
@@ -4662,7 +4370,7 @@ export default function AccountingPortalPrototype() {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: colours.text }}>{inv.clientName}</div>
                     <div style={{ fontSize: 12, color: colours.muted, marginTop: 2 }}>
-                      {inv.recurs} . Due {formatDateAU(inv.dueRecurDate)} . {currency(safeNumber(inv.total))}
+                      {inv.recurs} · Due {formatDateAU(inv.dueRecurDate)} · {currency(safeNumber(inv.total))}
                     </div>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: colours.purple, background: colours.lightPurple, padding: "2px 8px", borderRadius: 6 }}>
@@ -4689,7 +4397,7 @@ export default function AccountingPortalPrototype() {
         <div style={{ position: "fixed", inset: 0, zIndex: 99997, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div style={{ fontSize: 28 }}>[bell]</div>
+              <div style={{ fontSize: 28 }}>🔔</div>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: "#14202B" }}>Bills & Payables Reminders</div>
                 <div style={{ fontSize: 13, color: "#64748B", marginTop: 2 }}>
@@ -4704,7 +4412,7 @@ export default function AccountingPortalPrototype() {
                   background: alert.type === "overdue" ? "#FEF2F2" : alert.type === "today" ? "#FFF7ED" : "#FEFCE8",
                   border: `1px solid ${alert.type === "overdue" ? "#FECACA" : alert.type === "today" ? "#FED7AA" : "#FDE68A"}`,
                 }}>
-                  <div style={{ fontSize: 18 }}>{alert.type === "overdue" ? "[red]" : alert.type === "today" ? "[orange]" : "[yellow]"}</div>
+                  <div style={{ fontSize: 18 }}>{alert.type === "overdue" ? "🔴" : alert.type === "today" ? "🟠" : "🟡"}</div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: alert.type === "overdue" ? "#991B1B" : alert.type === "today" ? "#92400E" : "#78350F" }}>
                     {alert.label}
                   </div>
@@ -4727,66 +4435,4 @@ export default function AccountingPortalPrototype() {
       <style>{`@keyframes toastIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div> 
     );
-}if (isResettingPassword) {
-      return (
-        <div style={{ minHeight: "100vh", background: colours.bg, display: "grid", placeItems: "center", padding: 20 }}>
-          <div style={{ ...cardStyle, width: "100%", maxWidth: 440, padding: 32 }}>
-            <div style={{ fontSize: 24, fontWeight: 900, color: colours.text, marginBottom: 8 }}>Set New Password</div>
-            <div style={{ fontSize: 14, color: colours.muted, marginBottom: 24 }}>Enter your new password below.</div>
-            <div style={{ display: "grid", gap: 14 }}>
-              <div>
-                <label style={labelStyle}>New Password</label>
-                <input type="password" style={inputStyle} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="At least 8 characters" />
-              </div>
-              <div>
-                <label style={labelStyle}>Confirm New Password</label>
-                <input type="password" style={inputStyle} value={newPasswordConfirm} onChange={(e) => setNewPasswordConfirm(e.target.value)} placeholder="Repeat new password" />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button style={buttonPrimary} onClick={async () => {
-                if (!newPassword || newPassword.length < 8) { toast.warning("Password must be at least 8 characters"); return; }
-                if (newPassword !== newPasswordConfirm) { toast.warning("Passwords do not match"); return; }
-                try {
-                  if (!supabase?.auth) throw new Error("Supabase Auth is not configured in client.js");
-                  const { error } = await supabase.auth.updateUser({ password: newPassword });
-                  if (error) throw error;
-                  toast.success("Password updated! You can now sign in.");
-                  setIsResettingPassword(false);
-                  setNewPassword("");
-                  setNewPasswordConfirm("");
-                  openPortalAuthScreen("signin");
-                  clearAuthQueryParams();
-                } catch (err) { toast.error(err.message || "Failed to update password"); }
-              }}>Update Password</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (!authUser) {
-    return (
-      <AuthPage
-        profile={profile}
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authForm={authForm}
-        setAuthForm={setAuthForm}
-        authLoading={authLoading}
-        showResetSentModal={showResetSentModal}
-        setShowResetSentModal={setShowResetSentModal}
-        handleAuthSubmit={handleAuthSubmit}
-        handlePasswordReset={handlePasswordReset}
-        isValidEmail={isValidEmail}
-        colours={colours}
-        cardStyle={cardStyle}
-        inputStyle={inputStyle}
-        labelStyle={labelStyle}
-        buttonPrimary={buttonPrimary}
-        buttonSecondary={buttonSecondary}
-      />
-    );
-    }
-
-    
+}
