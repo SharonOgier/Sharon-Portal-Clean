@@ -165,8 +165,13 @@ app.use((req, res, next) => {
   res.set("X-Frame-Options", "DENY");
   res.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  res.set("X-XSS-Protection", "1; mode=block");
-  res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none';");
+  res.set("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  res.set("Cross-Origin-Resource-Policy", "same-origin");
+  res.set("X-XSS-Protection", "0");
+  if (req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https")) {
+    res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  res.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://portal.sharonogier.com https://calendly.com; navigate-to 'self' https://portal.sharonogier.com https://calendly.com; upgrade-insecure-requests; block-all-mixed-content;");
   if (req.path.startsWith("/api/")) {
     res.set("Cache-Control", "no-store");
   }
@@ -267,6 +272,58 @@ function isValidEmailAddress(value) {
 function validateCurrencyCode(value, fallback = "AUD") {
   const code = String(value || fallback).trim().toUpperCase();
   return /^[A-Z]{3}$/.test(code) ? code : fallback;
+}
+
+function getBearerToken(req) {
+  const header = String(req?.headers?.authorization || "").trim();
+    if (!/^Bearer\s+/i.test(header)) return "";
+  return header.replace(/^Bearer\s+/i, "").trim();
+}
+
+async function getAuthenticatedSupabaseUser(req) {
+  if (!supabase) return null;
+  const token = getBearerToken(req);
+  if (!token) return null;
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return null;
+    return data.user;
+  } catch {
+    return null;
+  }
+}
+
+function getInvoicePayload(row) {
+  return row?.data && typeof row.data === "object" ? row.data : row;
+}
+
+async function fetchInvoiceRecord(invoiceId) {
+  const id = String(invoiceId || "").trim();
+  if (!supabase || !id) return null;
+  const { data, error } = await supabase
+    .from("sas_invoices")
+    .select("id, user_id, data, updated_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function resolveInvoiceAmountForPayment({ invoiceId, fallbackAmount }) {
+  const invoiceRecord = await fetchInvoiceRecord(invoiceId).catch((error) => {
+    console.error("Failed to resolve invoice from Supabase:", error?.message || error);
+    return null;
+  });
+  const invoicePayload = getInvoicePayload(invoiceRecord);
+  const serverAmount = safeNumber(
+    invoicePayload?.total ??
+    invoicePayload?.grandTotal ??
+    invoicePayload?.invoiceTotal ??
+    invoicePayload?.totalAmount ??
+    0
+  );
+  const resolvedAmount = serverAmount > 0 ? serverAmount : safeNumber(fallbackAmount);
+  return { invoiceRecord, invoicePayload, resolvedAmount };
 }
 
 function sanitiseFreeText(value, maxLength = 500) {
@@ -726,9 +783,10 @@ app.get("/health", async (_req, res) => {
 });
 
 app.get("/api/debug-browser", async (req, res) => {
-  // Only allow from localhost to prevent leaking server internals
   const host = req.hostname || "";
-  if (host !== "localhost" && host !== "127.0.0.1") {
+  const remoteAddress = String(req.ip || req.socket?.remoteAddress || "");
+  const localCaller = host === "localhost" || host === "127.0.0.1" || remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress.endsWith(":127.0.0.1");
+  if (!localCaller) {
     return res.status(403).json({ ok: false, error: "Forbidden." });
   }
   try {
@@ -802,17 +860,28 @@ app.post("/api/create-checkout-session", async (req, res) => {
       grandTotal ??
       0;
 
-    const resolvedAmount = moneyToCents(rawAmount);
+    const { invoiceRecord, invoicePayload, resolvedAmount: resolvedInvoiceAmount } = await resolveInvoiceAmountForPayment({
+      invoiceId,
+      fallbackAmount: rawAmount,
+    });
+    const resolvedAmount = moneyToCents(resolvedInvoiceAmount);
 
     console.log("create-checkout-session amount debug:", {
+      invoiceId,
       amount,
       total,
       totalAmount,
       invoiceTotal,
       grandTotal,
       rawAmount,
+      resolvedInvoiceAmount,
       resolvedAmount,
+      amountSource: invoiceRecord ? "server" : "request",
     });
+
+    if (invoiceId && invoiceRecord && String(invoicePayload?.status || "").toLowerCase() === "paid") {
+      return res.status(400).json({ ok: false, error: "This invoice is already marked as paid." });
+    }
 
     if (!resolvedAmount || resolvedAmount <= 0) {
       return res.status(400).json({
@@ -860,11 +929,11 @@ app.post("/api/create-checkout-session", async (req, res) => {
     }
 
     const resolvedCurrency = validateCurrencyCode(currency || "AUD", "AUD").toLowerCase();
-    const resolvedDescription = sanitiseFreeText(description || `Invoice ${invoiceNumber || invoiceId || ""}`, 120) || "Invoice payment";
+    const resolvedDescription = sanitiseFreeText((invoicePayload?.description || description || `Invoice ${invoiceNumber || invoiceId || ""}`), 120) || "Invoice payment";
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: isValidEmailAddress(customerEmail) ? String(customerEmail).trim() : undefined,
+      customer_email: isValidEmailAddress(invoicePayload?.customerEmail || customerEmail) ? String(invoicePayload?.customerEmail || customerEmail).trim() : undefined,
       success_url: resolvedSuccessUrl,
       cancel_url: resolvedCancelUrl,
       line_items: [
@@ -877,8 +946,8 @@ app.post("/api/create-checkout-session", async (req, res) => {
               name: resolvedDescription,
               metadata: {
                 invoiceId: String(invoiceId || ""),
-                invoiceNumber: String(invoiceNumber || ""),
-                customerName: String(customerName || ""),
+                invoiceNumber: String(invoicePayload?.invoiceNumber || invoiceNumber || ""),
+                customerName: String(invoicePayload?.customerName || customerName || ""),
               },
             },
           },
@@ -886,9 +955,9 @@ app.post("/api/create-checkout-session", async (req, res) => {
       ],
       metadata: {
         invoiceId: String(invoiceId || ""),
-        invoiceNumber: String(invoiceNumber || ""),
-        customerName: String(customerName || ""),
-        customerEmail: String(customerEmail || ""),
+        invoiceNumber: String(invoicePayload?.invoiceNumber || invoiceNumber || ""),
+        customerName: String(invoicePayload?.customerName || customerName || ""),
+        customerEmail: String(invoicePayload?.customerEmail || customerEmail || ""),
       },
     });
 
@@ -933,7 +1002,14 @@ app.post("/api/create-paypal-order", async (req, res) => {
     } = req.body || {};
 
     const rawAmount = amount ?? total ?? totalAmount ?? invoiceTotal ?? grandTotal ?? 0;
-    const resolvedAmount = safeNumber(rawAmount);
+    const { invoiceRecord, invoicePayload, resolvedAmount } = await resolveInvoiceAmountForPayment({
+      invoiceId,
+      fallbackAmount: rawAmount,
+    });
+
+    if (invoiceId && invoiceRecord && String(invoicePayload?.status || "").toLowerCase() === "paid") {
+      return res.status(400).json({ ok: false, error: "This invoice is already marked as paid." });
+    }
 
     if (!resolvedAmount || resolvedAmount <= 0) {
       return res.status(400).json({
@@ -943,7 +1019,7 @@ app.post("/api/create-paypal-order", async (req, res) => {
     }
 
     const resolvedCurrency = validateCurrencyCode(currency || "AUD", "AUD");
-    const resolvedDescription = sanitiseFreeText(description || `Invoice ${invoiceNumber || invoiceId || ""}`, 120) || "Invoice payment";
+    const resolvedDescription = sanitiseFreeText((invoicePayload?.description || description || `Invoice ${invoiceNumber || invoiceId || ""}`), 120) || "Invoice payment";
 
     const fallbackBaseUrl = buildAllowedBaseUrl(req);
 
@@ -1093,7 +1169,7 @@ app.post("/api/send-document-email", async (req, res) => {
     }
 
     const resolvedNumber = String(number || (safeDocumentType === "quote" ? quoteNumber : invoiceNumber) || "").trim();
-    const resolvedSubject = String(subject || `${safeDocumentType === "invoice" ? "Invoice" : safeDocumentType === "quote" ? "Quote" : "Document"}${resolvedNumber ? ` ${resolvedNumber}` : ""}`).trim();
+    const resolvedSubject = sanitiseFreeText(subject || `${safeDocumentType === "invoice" ? "Invoice" : safeDocumentType === "quote" ? "Quote" : "Document"}${resolvedNumber ? ` ${resolvedNumber}` : ""}`, 160);
 
     console.log("send-document-email payload summary:", {
       documentType: safeDocumentType,
@@ -1153,7 +1229,7 @@ app.post("/api/send-invoice-attachment-email", async (req, res) => {
 
     const emailResult = await sendEmailHtml({
       to: recipients,
-      subject: payload.subject || `Invoice ${invoiceNumber}`,
+      subject: sanitiseFreeText(payload.subject || `Invoice ${invoiceNumber}`, 160),
       emailHtml: invoiceHtml,
       emailText: payload.text || undefined,
       replyTo: payload.replyTo,
@@ -1203,6 +1279,10 @@ app.post("/api/create-subscription-checkout", async (req, res) => {
       fallbackBaseUrl,
       searchParams: { subscribed: 0 },
     });
+
+    if (!isAllowedRedirectUrl(resolvedSuccessUrl) || !isAllowedRedirectUrl(resolvedCancelUrl)) {
+      return res.status(400).json({ ok: false, error: "Redirect URLs must match an allowed portal origin." });
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -1290,11 +1370,22 @@ app.post("/api/stripe-webhook", async (req, res) => {
           if (fetchError) {
             console.error("Failed to fetch invoice from Supabase:", fetchError.message);
           } else if (existing) {
+            const storedInvoice = getInvoicePayload(existing);
+            const expectedCents = moneyToCents(
+              storedInvoice?.total ?? storedInvoice?.grandTotal ?? storedInvoice?.invoiceTotal ?? storedInvoice?.totalAmount ?? 0
+            );
+            const paidCents = safeNumber(session?.amount_total);
+            if (expectedCents > 0 && paidCents > 0 && expectedCents !== paidCents) {
+              console.error("Stripe webhook amount mismatch:", { invoiceId, expectedCents, paidCents, sessionId: session?.id });
+              return res.status(400).send("Invoice amount mismatch.");
+            }
             const updatedData = {
-              ...existing.data,
+              ...storedInvoice,
               status: "Paid",
               paidAt: new Date().toISOString(),
               paidVia: "Stripe",
+              stripeCheckoutSessionId: session?.id || storedInvoice?.stripeCheckoutSessionId || "",
+              stripePaymentIntentId: session?.payment_intent || storedInvoice?.stripePaymentIntentId || "",
             };
             const { error: updateError } = await supabase
               .from("sas_invoices")
@@ -1439,7 +1530,9 @@ async function sendOverdueReminders() {
       // Find the profile (business) for this invoice
       const profileRow = (profileRows || []).find((r) => {
         const p = r.data || r;
-        return String(p.id) === String(invRow.id?.toString().slice(0, 8)) || true;
+        if (invRow.user_id && p.user_id) return String(p.user_id) === String(invRow.user_id);
+        if (inv.userId && p.user_id) return String(p.user_id) === String(inv.userId);
+        return false;
       });
       const profile = profileRow ? (profileRow.data || profileRow) : {};
       const businessName = profile.businessName || "Sharon's Accounting Service";
