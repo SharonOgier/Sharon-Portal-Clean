@@ -557,6 +557,7 @@ const generatePdfBase64FromHtml = async (html, filename = "document.pdf") => {
   container.style.width = "794px";
   container.style.background = "#ffffff";
   container.style.zIndex = "-1";
+  // Safety: markup is generated internally by buildInvoiceHtml/buildQuoteHtml which escapes user input via escapeHtml()
   container.innerHTML = markup;
   document.body.appendChild(container);
 
