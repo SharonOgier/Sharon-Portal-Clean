@@ -410,28 +410,6 @@ export default function AccountingPortalPrototype() {
   const [expenseCategorySelection, setExpenseCategorySelection] = useState("");
   const [searchExpenseCategory, setSearchExpenseCategory] = useState("");
 
-  const getPortalAuthUrl = (pathName = "/") => {
-    if (typeof window === "undefined") return pathName;
-    const origin = window.location.origin.replace(/\/$/, "");
-    const safePath = String(pathName || "/").startsWith("/") ? String(pathName || "/") : `/${String(pathName || "")}`;
-    return `${origin}${safePath}`;
-  };
-
-  const clearAuthQueryParams = () => {
-    if (typeof window === "undefined" || !window.history?.replaceState) return;
-    const cleanPath = window.location.pathname || "/";
-    const cleanHash = window.location.hash && window.location.hash.startsWith("#/") ? window.location.hash : "";
-    window.history.replaceState({}, "", `${cleanPath}${cleanHash}`);
-  };
-
-  const openPortalAuthScreen = (mode = "signin") => {
-    setAuthMode(mode === "signup" ? "signup" : "signin");
-    setIsResettingPassword(false);
-    setShowResetSentModal(false);
-    setNewPassword("");
-    setNewPasswordConfirm("");
-  };
-
   const clearPortalForFreshSetup = () => {
     setProfile(initialProfile);
     setClients([]);
@@ -547,46 +525,6 @@ export default function AccountingPortalPrototype() {
   }, [activePage]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const pathName = String(window.location.pathname || "").toLowerCase();
-      const search = new URLSearchParams(window.location.search || "");
-      const hashParams = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
-      const requestedMode =
-        search.get("mode") ||
-        search.get("auth") ||
-        hashParams.get("mode") ||
-        hashParams.get("auth") ||
-        "";
-
-      if (
-        pathName.includes("signup") ||
-        requestedMode === "signup" ||
-        requestedMode === "create-account" ||
-        search.get("signup") === "1"
-      ) {
-        setAuthMode("signup");
-      } else if (
-        pathName.includes("login") ||
-        requestedMode === "signin" ||
-        requestedMode === "login"
-      ) {
-        setAuthMode("signin");
-      }
-
-      const recoveryRequested =
-        pathName.includes("reset-password") ||
-        pathName.includes("update-password") ||
-        search.get("reset") === "1" ||
-        search.get("type") === "recovery" ||
-        hashParams.get("type") === "recovery" ||
-        Boolean(search.get("access_token") && search.get("refresh_token")) ||
-        Boolean(hashParams.get("access_token") && hashParams.get("refresh_token"));
-
-      if (recoveryRequested) {
-        setIsResettingPassword(true);
-      }
-    }
-
     if (!supabase?.auth) {
       setHasLoadedUserProfile(true);
       setAuthReady(true);
@@ -606,20 +544,8 @@ export default function AccountingPortalPrototype() {
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") {
-        setAuthUser(null);
-        setIsResettingPassword(false);
-        setAuthReady(true);
-        return;
-      }
-      if (event === "PASSWORD_RECOVERY") {
-        setIsResettingPassword(true);
-        setAuthReady(true);
-        return;
-      }
-      if (event === "SIGNED_IN") {
-        setIsResettingPassword(false);
-      }
+      if (event === "SIGNED_OUT") { setAuthUser(null); setAuthReady(true); return; }
+      if (event === "PASSWORD_RECOVERY") { setIsResettingPassword(true); setAuthReady(true); return; }
       if (isSigningOut.current) return;
       setAuthUser(session?.user || null);
       setAuthReady(true);
@@ -725,14 +651,6 @@ export default function AccountingPortalPrototype() {
       delete window.simulateInvoicePayment;
     };
   }, [invoices]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    window.openPortalAuthScreen = openPortalAuthScreen;
-    return () => {
-      delete window.openPortalAuthScreen;
-    };
-  }, []);
 
   useEffect(() => {
     window.sendInvoiceFromPreview = sendInvoiceFromPreview;
@@ -1020,7 +938,7 @@ export default function AccountingPortalPrototype() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: getPortalAuthUrl("/reset-password"),
+        redirectTo: window.location.origin,
       });
       if (error) throw error;
       setShowResetSentModal(true);
@@ -3652,6 +3570,26 @@ export default function AccountingPortalPrototype() {
     );
     }
 
+    if (!authUser) {
+    return (
+      <AuthPage
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        authForm={authForm}
+        setAuthForm={setAuthForm}
+        authLoading={authLoading}
+        handleAuthSubmit={handleAuthSubmit}
+        handlePasswordReset={handlePasswordReset}
+        colours={colours}
+        cardStyle={cardStyle}
+        inputStyle={inputStyle}
+        labelStyle={labelStyle}
+        buttonPrimary={buttonPrimary}
+        buttonSecondary={buttonSecondary}
+      />
+    );
+    }
+
     if (isResettingPassword) {
       return (
         <div style={{ minHeight: "100vh", background: colours.bg, display: "grid", placeItems: "center", padding: 20 }}>
@@ -3673,43 +3611,18 @@ export default function AccountingPortalPrototype() {
                 if (!newPassword || newPassword.length < 8) { toast.warning("Password must be at least 8 characters"); return; }
                 if (newPassword !== newPasswordConfirm) { toast.warning("Passwords do not match"); return; }
                 try {
-                  if (!supabase?.auth) throw new Error("Supabase Auth is not configured in client.js");
                   const { error } = await supabase.auth.updateUser({ password: newPassword });
                   if (error) throw error;
-                  toast.success("Password updated! You can now sign in.");
+                  toast.success("Password updated! Signing you in...");
                   setIsResettingPassword(false);
                   setNewPassword("");
                   setNewPasswordConfirm("");
-                  openPortalAuthScreen("signin");
-                  clearAuthQueryParams();
                 } catch (err) { toast.error(err.message || "Failed to update password"); }
               }}>Update Password</button>
             </div>
           </div>
         </div>
       );
-    }
-
-    if (!authUser) {
-    return (
-      <AuthPage
-        authMode={authMode}
-        setAuthMode={setAuthMode}
-        authForm={authForm}
-        setAuthForm={setAuthForm}
-        authLoading={authLoading}
-        showResetSentModal={showResetSentModal}
-        setShowResetSentModal={setShowResetSentModal}
-        handleAuthSubmit={handleAuthSubmit}
-        handlePasswordReset={handlePasswordReset}
-        colours={colours}
-        cardStyle={cardStyle}
-        inputStyle={inputStyle}
-        labelStyle={labelStyle}
-        buttonPrimary={buttonPrimary}
-        buttonSecondary={buttonSecondary}
-      />
-    );
     }
 
     if (isSupabaseRestoring || !hasLoadedUserProfile) {
@@ -3738,7 +3651,6 @@ export default function AccountingPortalPrototype() {
         wizardSaving={wizardSaving}
         completeSetupWizard={completeSetupWizard}
         authUser={authUser}
-        handleSignOut={handleSignOut}
         colours={colours}
         cardStyle={cardStyle}
         inputStyle={inputStyle}
