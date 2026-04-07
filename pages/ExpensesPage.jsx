@@ -192,7 +192,8 @@ export default function ExpensesPage(props) {
               style={buttonSecondary}
               onClick={() => {
                 const previewUrl = URL.createObjectURL(receiptFile);
-                window.open(previewUrl, "_blank");
+                window.open(previewUrl, "_blank", "noopener,noreferrer");
+                setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
               }}
             >
               Preview
@@ -255,7 +256,7 @@ export default function ExpensesPage(props) {
                   <button
                     style={{ ...buttonSecondary, color: colours.teal, borderColor: colours.teal }}
                     onClick={() => {
-                      const w = window.open("", "_blank");
+                      const w = window.open("", "_blank", "noopener,noreferrer");
                       if (!w) return;
                       const receiptSection = row.receiptUrl
                         ? `<div style="margin-top:24px;">
