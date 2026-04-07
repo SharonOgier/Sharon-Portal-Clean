@@ -2543,7 +2543,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
 
   // ── Inject "View & Accept Quote" button into quote emails ──
   if (documentType === "quote" && emailDocumentRecord.publicToken) {
-    const quoteViewUrl = `${window.location.origin}/quote/view?token=${encodeURIComponent(emailDocumentRecord.publicToken)}`;
+    const quoteViewUrl = `${window.location.origin}/?quote_token=${encodeURIComponent(emailDocumentRecord.publicToken)}`;
     const acceptanceBanner = `
       <div style="margin:24px auto 0; max-width:760px; text-align:center; padding:24px; background:#FAFBFF; border:2px solid #E2E8F0; border-radius:16px;">
         <div style="font-size:16px; font-weight:700; color:#14202B; margin-bottom:12px;">Ready to proceed?</div>

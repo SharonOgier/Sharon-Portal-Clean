@@ -19,6 +19,9 @@ function RootRoute() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const legacyPortalRequested = searchParams.get("portal") === "1";
+  const quoteToken =
+    searchParams.get("quote_token") ||
+    (searchParams.get("quote") === "1" ? searchParams.get("token") : "");
   const recoveryRequested =
     searchParams.get("reset") === "1" ||
     searchParams.get("type") === "recovery" ||
@@ -35,6 +38,10 @@ function RootRoute() {
       (searchParams.get("signup") === "1" ? "signup" : "signin");
 
     return <Navigate to={`/auth?mode=${mode}`} replace />;
+  }
+
+  if (quoteToken) {
+    return <Navigate to={`/quote/view?token=${encodeURIComponent(quoteToken)}`} replace />;
   }
 
   return <HomePage />;
