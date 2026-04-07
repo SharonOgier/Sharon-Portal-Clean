@@ -2444,9 +2444,13 @@ export default function AccountingPortalPrototype() {
 
   const serverBaseUrl = getApiBaseUrl(profile?.stripeServerUrl);
 
-  if (
+  const shouldAttemptAutomaticStripeCheckout =
     documentType === "invoice" &&
     !stripeCheckoutUrl &&
+    Boolean(profile?.stripePaymentLink);
+
+  if (
+    shouldAttemptAutomaticStripeCheckout &&
     typeof resolveInvoiceStripeAmount === "function" &&
     resolveInvoiceStripeAmount(emailDocumentRecord) > 0
   ) {

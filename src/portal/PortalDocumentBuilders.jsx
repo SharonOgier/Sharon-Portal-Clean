@@ -760,6 +760,7 @@ const cardCheckoutFunctionUrl = safeHref(
     : ""
 );
 const canCreateCardCheckout = !cardPaymentUrl && !!cardCheckoutFunctionUrl && safeNumber(invoice.total) > 0;
+const hasOnlinePaymentOption = Boolean(cardPaymentUrl || paypalCheckoutUrl);
 const cardCheckoutPayload = {
   invoiceId: invoice?.id || "",
   invoiceNumber: invoice?.invoiceNumber || paymentReference,
@@ -903,18 +904,19 @@ ${purchaseOrderBlock}
 <div style="margin-top:10px; font-size:13px; color:#555;">
   Please use reference: ${paymentReference}
 </div>
-<div style="margin-top:16px; padding:14px; border:1px solid #E2E8F0; border-radius:12px; background:#F7F6F5;">
+${hasOnlinePaymentOption ? `<div style="margin-top:16px; padding:14px; border:1px solid #E2E8F0; border-radius:12px; background:#F7F6F5;">
   <div style="font-weight:700; color:#14202B; margin-bottom:8px;">Pay Online</div>
   <div style="font-size:13px; color:#555; margin-bottom:10px;">Choose your preferred payment method below.</div>
   ${cardPaymentUrl
     ? `<a href="${cardPaymentUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
-    : (canCreateCardCheckout
-      ? `<button id="stripe-pay-btn" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; border:none; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer;">Pay with Card</button><span id="stripe-status" style="font-size:13px; color:#555; margin-right:10px;"></span>`
-      : "")
+    : ""
   }
-  <button id="paypal-pay-btn"
+  ${paypalCheckoutUrl
+    ? `<button id="paypal-pay-btn"
     style="display:inline-block; background:#003087; color:#FFFFFF; border:none; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer;">Pay with PayPal</button>
-  <span id="paypal-status" style="font-size:13px; color:#555; margin-left:10px;"></span>
+  <span id="paypal-status" style="font-size:13px; color:#555; margin-left:10px;"></span>`
+    : ""
+  }
   <script>
     (function() {
       var stripeBtn = document.getElementById('stripe-pay-btn');
@@ -998,7 +1000,7 @@ ${purchaseOrderBlock}
       });
     })();
   </script>
-</div>
+</div>` : ""}
 </div>
 
 <div class="footer">
@@ -1519,4 +1521,3 @@ export function writeCertificatePreviewToWindow(w, job, ctx = {}) {
   const blob = new Blob([html], { type: "text/html" });
   openBlobUrlInWindow(w, blob);
 }
-
