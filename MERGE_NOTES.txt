@@ -1,0 +1,17 @@
+Merged base: Sharon-Portal-Clean + Lovable frontend/portal.
+
+What was merged:
+- Added Lovable public pages and routing.
+- Added Lovable portal folder and supporting UI/component libraries.
+- Preserved your existing server/payment files (server.cjs, create-checkout.js, stripe-webhook.js, public/*.html).
+- Added Tailwind + router + shadcn-style UI dependencies to package.json.
+- Added Vite alias @ -> ./src.
+- Updated Supabase client to accept either VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY.
+
+After replacing your repo with this version:
+1. npm install
+2. npm run dev
+3. test /, /landing, /farm-equipment, /portal
+4. if needed, copy your local env values back into .env.local
+
+This is a best-effort code merge. Because the two projects evolved separately, some routes or data flows may still need follow-up fixes after install/test.
