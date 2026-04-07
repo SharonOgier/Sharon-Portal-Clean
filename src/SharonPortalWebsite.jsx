@@ -99,6 +99,7 @@ import ATOTaxFormPage       from "./ATOTaxFormPage";
 
 export default function AccountingPortalPrototype() {
   const { toasts, toast, removeToast } = useToast();
+  const portalDebugEnabled = true;
   const { confirm, modal: confirmModal } = useConfirm();
 
   const MAX_RECEIPT_FILE_BYTES = 10 * 1024 * 1024;
@@ -3540,6 +3541,33 @@ export default function AccountingPortalPrototype() {
     }, [clientRevenueRows, totals, invoices, monthlyFinance, expenses, expenseCategoryRows]);
 
 
+
+  useEffect(() => {
+    if (!portalDebugEnabled) return;
+    console.log("[Portal Debug]", {
+      authReady,
+      authUser: Boolean(authUser),
+      isResettingPassword,
+      isSupabaseRestoring,
+      hasLoadedUserProfile,
+      setupComplete,
+      activePage,
+      profileBusinessName: profile?.businessName || "",
+      accountStatus: profile?.accountStatus || "",
+    });
+  }, [
+    portalDebugEnabled,
+    authReady,
+    authUser,
+    isResettingPassword,
+    isSupabaseRestoring,
+    hasLoadedUserProfile,
+    setupComplete,
+    activePage,
+    profile?.businessName,
+    profile?.accountStatus,
+  ]);
+
     ;
     if (!authReady) {
     return (
@@ -3554,7 +3582,7 @@ export default function AccountingPortalPrototype() {
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         }}
       >
-        Loading portal...
+        Loading portal... authReady is false
       </div>
     );
     }
@@ -3627,7 +3655,7 @@ export default function AccountingPortalPrototype() {
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         }}
       >
-        Loading your profile.
+        Loading your profile. Waiting for Supabase restore to finish.
       </div>
     );
     }
