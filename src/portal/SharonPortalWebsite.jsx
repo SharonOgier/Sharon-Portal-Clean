@@ -2404,18 +2404,24 @@ export default function AccountingPortalPrototype() {
   let emailDocumentRecord = { ...(documentRecord || {}) };
   let stripeCheckoutUrl = emailDocumentRecord?.stripeCheckoutUrl || "";
 
-  // ── Generate publicToken for quotes so clients can accept/decline online ──
-  if (documentType === "quote" && !emailDocumentRecord.publicToken) {
-    const publicToken = crypto.randomUUID();
-    emailDocumentRecord.publicToken = publicToken;
-    emailDocumentRecord.status = emailDocumentRecord.status === "Draft" ? "Sent" : emailDocumentRecord.status;
-    // Save the token to the quote immediately
+  // ── Persist publicToken for quotes before emailing so the acceptance link can resolve ──
+  if (documentType === "quote") {
+    const persistedToken = emailDocumentRecord.publicToken || crypto.randomUUID();
+    emailDocumentRecord = {
+      ...emailDocumentRecord,
+      publicToken: persistedToken,
+      status: emailDocumentRecord.status === "Draft" ? "Sent" : emailDocumentRecord.status,
+    };
     try {
       const saved = await upsertRecordInDatabase(SUPABASE_TABLES.quotes, emailDocumentRecord);
+      if (!saved?.publicToken) {
+        throw new Error("Quote link could not be prepared. Please save the quote and try again.");
+      }
       setQuotes((prev) => prev.map((q) => q.id === emailDocumentRecord.id ? saved : q));
       emailDocumentRecord = { ...saved };
     } catch (e) {
       console.error("Failed to save publicToken to quote:", e);
+      throw new Error(e?.message || "Quote link could not be prepared. Please try again.");
     }
   }
 
