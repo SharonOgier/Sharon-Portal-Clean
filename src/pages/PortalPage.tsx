@@ -1,3 +1,3 @@
 export default function PortalPage() {
-  return <div>PORTAL PAGE FILE WORKS</div>;
+  return <div style={{ padding: 20 }}>PORTAL PAGE WORKS</div>;
 }
