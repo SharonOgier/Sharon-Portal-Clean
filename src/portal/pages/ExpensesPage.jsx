@@ -451,6 +451,10 @@ export default function ExpensesPage(props) {
                     Preview &amp; Print
                   </button>
 
+                  <button style={buttonSecondary} onClick={() => openExpenseEditor(row)}>
+                    Edit
+                  </button>
+
                   <button style={buttonSecondary} onClick={() => deleteExpense(row.id)}>
                     Delete
                   </button>
@@ -467,6 +471,7 @@ export default function ExpensesPage(props) {
         expenseForm={expenseForm}
         setExpenseForm={setExpenseForm}
         saveExpense={saveExpense}
+        openExpenseEditor={openExpenseEditor}
         deleteExpense={deleteExpense}
         confirm={confirm}
         colours={colours}
@@ -483,6 +488,85 @@ export default function ExpensesPage(props) {
         jobs={jobs}
         getClientName={getClientName}
       />
+
+      {expenseEditorOpen && expenseEditorForm ? (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 900, maxHeight: "92vh", overflowY: "auto", background: colours.white, borderRadius: 24, padding: 24, display: "grid", gap: 18, boxShadow: "0 24px 60px rgba(15, 23, 42, 0.25)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: colours.text }}>Edit Expense</div>
+                <div style={{ fontSize: 14, color: colours.muted, marginTop: 4 }}>Update the saved expense and keep linked job totals in sync.</div>
+              </div>
+              <button style={buttonSecondary} onClick={closeExpenseEditor}>Close</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Date</label>
+                <input type="date" style={inputStyle} value={expenseEditorForm.date || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, date: e.target.value, dueDate: prev.dueDate || e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Due Date</label>
+                <input type="date" style={inputStyle} value={expenseEditorForm.dueDate || expenseEditorForm.date || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Supplier</label>
+                <input style={inputStyle} value={expenseEditorForm.supplier || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, supplier: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Category</label>
+                <input style={inputStyle} value={expenseEditorForm.category || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, category: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Expense Type</label>
+                <input style={inputStyle} value={expenseEditorForm.expenseType || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, expenseType: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Work Type</label>
+                <input style={inputStyle} value={expenseEditorForm.workType || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, workType: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Amount</label>
+                <input type="number" step="0.01" style={inputStyle} value={expenseEditorForm.amount || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, amount: e.target.value }))} />
+              </div>
+              <div>
+                <label style={labelStyle}>Linked Job</label>
+                <select style={inputStyle} value={expenseEditorForm.jobId || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, jobId: e.target.value }))}>
+                  <option value="">No linked job</option>
+                  {jobs.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.title}{job.clientId ? ` (${getClientName(job.clientId)})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={labelStyle}>Description</label>
+                <textarea style={{ ...inputStyle, minHeight: 110, resize: "vertical" }} value={expenseEditorForm.description || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, description: e.target.value }))} />
+              </div>
+            </div>
+
+            {(expenseEditorForm.receiptFileName || expenseEditorForm.receiptUrl) ? (
+              <div style={{ ...cardStyle, padding: 14, background: colours.bg }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 6 }}>Saved Receipt</div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, color: colours.text }}>{expenseEditorForm.receiptFileName || expenseEditorForm.receiptUrl}</span>
+                  {expenseEditorForm.receiptUrl ? (
+                    <button style={buttonSecondary} onClick={() => openReceiptFile ? openReceiptFile(expenseEditorForm) : window.open(expenseEditorForm.receiptUrl, "_blank", "noopener,noreferrer")}>
+                      Open Receipt
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button style={buttonSecondary} onClick={closeExpenseEditor}>Cancel</button>
+              <button style={buttonPrimary} onClick={saveExpenseEdits}>Save Changes</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
     );
 

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 
 interface QuoteData {
+  id?: string | number;
   quoteNumber: string;
   quoteDate: string;
   expiryDate: string;
@@ -23,6 +23,10 @@ interface QuoteData {
   status: string;
   gstStatus: string;
   hidePhoneNumber: boolean;
+  acceptedDate?: string;
+  declinedDate?: string;
+  respondedAt?: string;
+  convertedToJobId?: string;
 }
 
 interface BusinessData {
@@ -65,16 +69,6 @@ export default function QuoteViewPage() {
 
     const fetchQuote = async () => {
       try {
-        const { data, error: fnErr } = await supabase.functions.invoke(
-          "handle-quote-response",
-          {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-            body: { _queryParams: { token } },
-          }
-        );
-
-        // functions.invoke doesn't support query params, so we use a direct fetch
         const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
         const res = await fetch(
           `https://${projectId}.supabase.co/functions/v1/handle-quote-response?token=${encodeURIComponent(token)}`
@@ -123,7 +117,14 @@ export default function QuoteViewPage() {
       setResponseMessage(json.message);
       // Update local state to reflect
       if (quote) {
-        setQuote({ ...quote, status: action === "accept" ? "Accepted" : "Declined" });
+        setQuote({
+          ...quote,
+          status: action === "accept" ? "Accepted" : "Declined",
+          respondedAt: new Date().toISOString(),
+          acceptedDate: action === "accept" ? new Date().toISOString() : quote.acceptedDate,
+          declinedDate: action === "decline" ? new Date().toISOString() : quote.declinedDate,
+          convertedToJobId: json.jobId || quote.convertedToJobId,
+        });
       }
     } catch (e: any) {
       setError(e.message || "Failed to respond.");

@@ -39,6 +39,21 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
     loadData();
   }, [authUser]);
 
+  useEffect(() => {
+    if (!authUser?.id) return;
+    const refresh = () => loadData();
+    const channel = supabase
+      .channel(`subcontractor-portal-${authUser.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_assignments", filter: `subcontractor_user_id=eq.${authUser.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `subcontractor_user_id=eq.${authUser.id}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_jobs" }, refresh)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authUser?.id]);
+
   const loadData = async () => {
     setLoading(true);
     try {

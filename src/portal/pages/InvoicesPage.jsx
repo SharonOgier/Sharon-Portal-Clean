@@ -885,6 +885,57 @@ function InvoicesPageInner(props) {
                         </div>
 
                         <div style={{ gridColumn: "1 / -1" }}>
+                          <label style={labelStyle}>Linked Job</label>
+                          <div style={{ display: "grid", gap: 10 }}>
+                            <input
+                              style={inputStyle}
+                              placeholder="Search jobs by title or client"
+                              value={invoiceEditorForm.jobSearch || ""}
+                              onChange={(e) => setInvoiceEditorForm((prev) => ({ ...prev, jobSearch: e.target.value }))}
+                            />
+                            <select
+                              style={inputStyle}
+                              value={invoiceEditorForm.jobId || ""}
+                              onChange={(e) => setInvoiceEditorForm((prev) => ({ ...prev, jobId: e.target.value }))}
+                            >
+                              <option value="">No linked job</option>
+                              {jobs
+                                .filter((job) => {
+                                  const search = String(invoiceEditorForm.jobSearch || "").trim().toLowerCase();
+                                  if (!search) return true;
+                                  const clientName = String(getClientName(job.clientId) || "").toLowerCase();
+                                  const title = String(job.title || "").toLowerCase();
+                                  return title.includes(search) || clientName.includes(search);
+                                })
+                                .map((job) => (
+                                  <option key={job.id} value={job.id}>
+                                    {job.title}{job.clientId ? ` (${getClientName(job.clientId)})` : ""}
+                                  </option>
+                                ))}
+                            </select>
+                            {invoiceEditorForm.jobId ? (() => {
+                              const linkedJob = jobs.find((job) => String(job.id) === String(invoiceEditorForm.jobId));
+                              if (!linkedJob) return null;
+                              const fin = computeJobFinancials(linkedJob);
+                              const margin = editorTotal - fin.totalCost;
+                              const marginPct = editorTotal > 0 ? (margin / editorTotal) * 100 : 0;
+                              return (
+                                <div style={{ ...cardStyle, padding: 14, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                                  <div style={{ fontSize: 12, fontWeight: 800, color: "#92400E", marginBottom: 8 }}>
+                                    Linked to {linkedJob.title}
+                                  </div>
+                                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, fontSize: 13 }}>
+                                    <div><strong>Quoted</strong><div>{currency(fin.quotedTotal)}</div></div>
+                                    <div><strong>Cost</strong><div>{currency(fin.totalCost)}</div></div>
+                                    <div><strong>Margin</strong><div style={{ color: margin >= 0 ? "#2E7D32" : "#C62828", fontWeight: 800 }}>{currency(margin)} ({marginPct.toFixed(0)}%)</div></div>
+                                  </div>
+                                </div>
+                              );
+                            })() : null}
+                          </div>
+                        </div>
+
+                        <div style={{ gridColumn: "1 / -1" }}>
                           <label style={labelStyle}>Item / Service Name</label>
                           <select
                             style={inputStyle}

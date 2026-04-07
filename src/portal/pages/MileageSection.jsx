@@ -18,6 +18,7 @@ export default function MileageSection({
   expenseForm,
   setExpenseForm,
   saveExpense,
+  openExpenseEditor = () => {},
   deleteExpense,
   confirm,
   colours,
@@ -37,6 +38,26 @@ export default function MileageSection({
   const [trip, setTrip] = useState(emptyTrip());
   const [editingId, setEditingId] = useState(null);
   const pendingSaveRef = useRef(false);
+
+  const parseTripFromExpense = (expense) => {
+    const description = String(expense?.description || "");
+    const routeMatch = description.match(/^(.+?)\s+(?:→|->|--)\s+(.+?)\s*(\(|\d+\s*km|$)/);
+    const purposeMatch = description.match(/\(([^)]+)\)/);
+    const kmMatch = description.match(/([\d.]+)\s*km/i);
+    const rateMatch = description.match(/\$\s*([\d.]+)\s*\/\s*km/i);
+    return {
+      id: expense?.id || crypto.randomUUID(),
+      date: expense?.date || new Date().toISOString().slice(0, 10),
+      from: routeMatch?.[1]?.trim() || "",
+      to: routeMatch?.[2]?.trim() || "",
+      purpose: purposeMatch?.[1]?.trim() || "",
+      km: kmMatch?.[1] || "",
+      ratePerKm: rateMatch?.[1] || String(ATO_RATE_PER_KM),
+      jobId: expense?.jobId || "",
+      receiptFileName: expense?.receiptFileName || "",
+      receiptUrl: expense?.receiptUrl || "",
+    };
+  };
 
   // After expenseForm is updated with mileage data, trigger save
   useEffect(() => {
@@ -86,6 +107,7 @@ export default function MileageSection({
 
     setExpenseForm((prev) => ({
       ...prev,
+      id: editingId || "",
       date: trip.date,
       dueDate: trip.date,
       supplier: "Mileage",
@@ -95,6 +117,8 @@ export default function MileageSection({
       gst: "0",
       expenseType: "Motor Vehicle",
       jobId: trip.jobId || "",
+      receiptFileName: trip.receiptFileName || "",
+      receiptUrl: trip.receiptUrl || "",
     }));
 
     setTrip(emptyTrip());
@@ -298,12 +322,24 @@ export default function MileageSection({
               key: "actions",
               label: "",
               render: (_, row) => (
-                <button
-                  style={buttonSecondary}
-                  onClick={() => deleteExpense(row.id)}
-                >
-                  Delete
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    style={buttonSecondary}
+                    onClick={() => {
+                      const nextTrip = parseTripFromExpense(row);
+                      setTrip(nextTrip);
+                      setEditingId(row.id);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    style={buttonSecondary}
+                    onClick={() => deleteExpense(row.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
               ),
             },
           ]}

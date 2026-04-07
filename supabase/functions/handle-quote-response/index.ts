@@ -146,11 +146,15 @@ serve(async (req: Request) => {
       }
 
       const newStatus = action === "accept" ? "Accepted" : "Declined";
-      const updatedData = {
+      const responseAt = new Date().toISOString();
+      let updatedData = {
         ...quoteData,
         status: newStatus,
-        respondedAt: new Date().toISOString(),
+        respondedAt: responseAt,
         clientResponse: clientMessage,
+        acceptedDate: action === "accept" ? responseAt : quoteData.acceptedDate || "",
+        declinedDate: action === "decline" ? responseAt : quoteData.declinedDate || "",
+        declineReason: action === "decline" ? clientMessage : quoteData.declineReason || "",
       };
 
       // Update the quote
@@ -169,8 +173,9 @@ serve(async (req: Request) => {
 
       // If accepted, create a job
       let jobCreated = false;
+      let jobId: string | null = null;
       if (action === "accept") {
-        const jobId = Date.now();
+        jobId = String(Date.now());
         const today = new Date().toISOString().split("T")[0];
         const jobPayload = {
           id: jobId,
@@ -198,6 +203,18 @@ serve(async (req: Request) => {
           console.error("Job creation error:", jobErr);
         } else {
           jobCreated = true;
+          const linkedQuoteData = {
+            ...updatedData,
+            convertedToJobId: jobId,
+            jobId,
+          };
+          const { error: relinkErr } = await supabase
+            .from("sas_quotes")
+            .update({ data: linkedQuoteData, updated_at: new Date().toISOString() })
+            .eq("id", quoteRow.id);
+          if (relinkErr) {
+            console.error("Quote relink error:", relinkErr);
+          }
         }
       }
 
@@ -262,6 +279,7 @@ serve(async (req: Request) => {
           ok: true,
           status: newStatus,
           jobCreated,
+          jobId,
           message:
             action === "accept"
               ? "Quote accepted! The business has been notified and will be in touch."
