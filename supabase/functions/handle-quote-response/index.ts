@@ -8,6 +8,47 @@ const corsHeaders = {
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
 
+async function findQuoteByToken(supabase: any, token: string) {
+  const directMatch = await supabase
+    .from("sas_quotes")
+    .select("*")
+    .filter("data->>publicToken", "eq", token);
+
+  if (!directMatch.error && Array.isArray(directMatch.data) && directMatch.data.length > 0) {
+    return { row: directMatch.data[0], method: "json-path" };
+  }
+
+  // Fallback for environments where the JSON-path filter does not behave reliably.
+  const broadFetch = await supabase
+    .from("sas_quotes")
+    .select("id, user_id, data, updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(1000);
+
+  if (broadFetch.error || !Array.isArray(broadFetch.data)) {
+    return {
+      row: null,
+      method: "fallback-error",
+      error: directMatch.error || broadFetch.error,
+    };
+  }
+
+  const matchedRow = broadFetch.data.find((row: any) => {
+    const data = row?.data || {};
+    return (
+      String(data.publicToken || "") === token ||
+      String(data.quoteToken || "") === token ||
+      String(data.public_token || "") === token
+    );
+  });
+
+  return {
+    row: matchedRow || null,
+    method: matchedRow ? "fallback-scan" : "not-found",
+    error: directMatch.error || null,
+  };
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -28,20 +69,20 @@ serve(async (req: Request) => {
       });
     }
 
-    // Find the quote by publicToken in the JSONB data field
-    const { data: rows, error: fetchErr } = await supabase
-      .from("sas_quotes")
-      .select("*")
-      .filter("data->>publicToken", "eq", token);
+    const quoteLookup = await findQuoteByToken(supabase, token);
+    const quoteRow = quoteLookup.row;
 
-    if (fetchErr || !rows || rows.length === 0) {
+    if (!quoteRow) {
+      console.error("Quote lookup failed", {
+        token,
+        method: quoteLookup.method,
+        error: quoteLookup.error?.message || quoteLookup.error || null,
+      });
       return new Response(JSON.stringify({ error: "Quote not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const quoteRow = rows[0];
     const quoteData = quoteRow.data as Record<string, any>;
 
     // Also fetch the owner's profile for context

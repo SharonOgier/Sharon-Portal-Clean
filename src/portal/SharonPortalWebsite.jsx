@@ -236,6 +236,7 @@ export default function AccountingPortalPrototype() {
     password: "",
     confirmPassword: "",
   });
+  const activePortalUserId = viewingAsUserId || authUser?.id || null;
   const [setupComplete, setSetupComplete] = useState(false);
   const [wizardSaving, setWizardSaving] = useState(false);
   const [hasLoadedUserProfile, setHasLoadedUserProfile] = useState(false);
@@ -1020,7 +1021,7 @@ export default function AccountingPortalPrototype() {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const today = todayLocal();
     const businessSlug = String(profile?.businessName || "portal").toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 40);
-    const folderPath = `${businessSlug}/${authUser.id}/expenses/${today}`;
+    const folderPath = `${businessSlug}/${activePortalUserId || authUser.id}/expenses/${today}`;
     const filePath = `${folderPath}/receipt-${Date.now()}-${safeName}`;
 
     const { error } = await supabase.storage
@@ -1052,7 +1053,7 @@ export default function AccountingPortalPrototype() {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const today = todayLocal();
     const businessSlug = String(profile?.businessName || "portal").toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 40);
-    const folderPath = `${businessSlug}/${authUser.id}/documents/${today}`;
+    const folderPath = `${businessSlug}/${activePortalUserId || authUser.id}/documents/${today}`;
     const filePath = `${folderPath}/document-${Date.now()}-${safeName}`;
 
     const { error } = await supabase.storage
@@ -1082,13 +1083,28 @@ export default function AccountingPortalPrototype() {
     return Number.isFinite(parsed) && parsed > 0;
   };
 
+  const mergeRecordById = (records, savedRecord) => {
+    if (!savedRecord?.id) return Array.isArray(records) ? records : [];
+    const current = Array.isArray(records) ? records : [];
+    const exists = current.some((record) => String(record?.id) === String(savedRecord.id));
+    if (exists) {
+      return current.map((record) =>
+        String(record?.id) === String(savedRecord.id) ? savedRecord : record
+      );
+    }
+    return [...current, savedRecord];
+  };
+
   const buildSupabaseRow = (item) => {
     if (!authUser?.id) {
       throw new Error("Please sign in first.");
     }
+    if (!activePortalUserId) {
+      throw new Error("No active portal user selected.");
+    }
 
     const row = {
-      user_id: authUser.id,
+      user_id: activePortalUserId,
       data: sanitiseForSupabase({ ...(item || {}) }),
       updated_at: new Date().toISOString(),
     };
@@ -1103,7 +1119,7 @@ export default function AccountingPortalPrototype() {
 
   const fetchCollectionFromDatabase = async (tableName, overrideUserId = null) => {
     if (!supabase || !authUser?.id) return [];
-    const targetUserId = overrideUserId || viewingAsUserId || authUser.id;
+    const targetUserId = overrideUserId || activePortalUserId || authUser.id;
 
     const { data, error } = await supabase
       .from(tableName)
@@ -1133,7 +1149,7 @@ export default function AccountingPortalPrototype() {
         .from(tableName)
         .update({ data: row.data, updated_at: row.updated_at })
         .eq("id", row.id)
-        .eq("user_id", authUser.id)
+        .eq("user_id", row.user_id)
         .select("id, data, user_id")
         .maybeSingle();
       if (error) throw error;
@@ -1154,11 +1170,12 @@ export default function AccountingPortalPrototype() {
 
   const deleteRecordFromDatabase = async (tableName, id) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
+    if (!activePortalUserId) throw new Error("No active portal user selected.");
     const { error } = await supabase
       .from(tableName)
       .delete()
       .eq("id", safeNumber(id))
-      .eq("user_id", authUser.id);
+      .eq("user_id", activePortalUserId);
     if (error) throw error;
   };
 
@@ -1925,7 +1942,7 @@ export default function AccountingPortalPrototype() {
         const { data: subCosts } = await supabase
           .from("sas_subcontractor_costs")
           .select("*")
-          .eq("job_owner_user_id", authUser.id);
+          .eq("job_owner_user_id", activePortalUserId || authUser.id);
         if (subCosts) setSubcontractorCosts(subCosts);
       } catch (e) { console.warn("Could not load subcontractor costs:", e); }
 
@@ -2417,7 +2434,7 @@ export default function AccountingPortalPrototype() {
       if (!saved?.publicToken) {
         throw new Error("Quote link could not be prepared. Please save the quote and try again.");
       }
-      setQuotes((prev) => prev.map((q) => q.id === emailDocumentRecord.id ? saved : q));
+      setQuotes((prev) => mergeRecordById(prev, saved));
       emailDocumentRecord = { ...saved };
     } catch (e) {
       console.error("Failed to save publicToken to quote:", e);
@@ -3283,7 +3300,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       let nextQuote = savedQuote;
       const saveMessage = "Quote saved to Supabase database. Use Preview to print or download the PDF.";
 
-      setQuotes((prev) => [...prev, nextQuote]);
+      setQuotes((prev) => mergeRecordById(prev, nextQuote));
       setQuoteForm((prev) => ({
         ...prev,
         savedRecordId: nextQuote.id,
@@ -3350,9 +3367,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
     setSavingQuoteEdits(true);
     try {
       const savedQuote = await upsertRecordInDatabase(SUPABASE_TABLES.quotes, updatedQuote);
-      setQuotes((prev) =>
-        prev.map((quote) => (quote.id === quoteEditorForm.id ? savedQuote : quote))
-      );
+      setQuotes((prev) => mergeRecordById(prev, savedQuote));
       setSupabaseSyncStatus("Quote changes saved to Supabase database");
       closeQuoteEditor();
     } catch (error) {
