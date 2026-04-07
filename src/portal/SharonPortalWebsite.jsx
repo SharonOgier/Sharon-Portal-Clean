@@ -791,12 +791,25 @@ export default function AccountingPortalPrototype() {
           })));
         }
         // Load team members and invitations
-        const { data: members } = await supabase.from("sas_team_members").select("*").eq("owner_user_id", authUser.id);
+        const { data: members, error: membersError } = await supabase
+          .from("sas_team_members")
+          .select("*")
+          .eq("owner_user_id", authUser.id);
+        if (membersError && membersError.code !== "42501") throw membersError;
         setTeamMembers(members || []);
-        const { data: invites } = await supabase.from("sas_team_invitations").select("*").eq("inviter_user_id", authUser.id);
+        const { data: invites, error: invitesError } = await supabase
+          .from("sas_team_invitations")
+          .select("*")
+          .eq("inviter_user_id", authUser.id);
+        if (invitesError && invitesError.code !== "42501") throw invitesError;
         setTeamInvitations(invites || []);
         // Check for pending invitations for this user and auto-accept
-        const { data: pendingInvites } = await supabase.from("sas_team_invitations").select("*").eq("email", authUser.email).eq("status", "pending");
+        const { data: pendingInvites, error: pendingInvitesError } = await supabase
+          .from("sas_team_invitations")
+          .select("*")
+          .eq("email", authUser.email)
+          .eq("status", "pending");
+        if (pendingInvitesError && pendingInvitesError.code !== "42501") throw pendingInvitesError;
         if (pendingInvites?.length) {
           for (const inv of pendingInvites) {
             await supabase.from("sas_team_members").insert({ owner_user_id: inv.inviter_user_id, member_user_id: authUser.id, permission: inv.permission }).select();

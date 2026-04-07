@@ -467,9 +467,9 @@ export function ActivityListCard({ title, rows, emptyText = "No recent activity 
     <SectionCard title={title}>
       {rows && rows.length ? (
         <div style={{ display: "grid", gap: 12 }}>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <div
-              key={`${row.type}-${row.label}-${row.date}`}
+              key={`${row.type}-${row.label}-${row.date}-${index}`}
               style={{
                 display: "grid",
                 gridTemplateColumns: "auto 1fr auto",
@@ -1014,5 +1014,4 @@ export function IncomeSourceModal({
 
 
 // ── Document builder functions (top-level for correct scope access) ──────────
-
 
