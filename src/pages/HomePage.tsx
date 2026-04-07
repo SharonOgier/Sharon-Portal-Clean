@@ -44,19 +44,17 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-page)" }}>
-      {/* Top bar */}
       <div className="bg-primary text-primary-foreground py-2 px-6 flex justify-end items-center gap-6 text-sm font-semibold flex-wrap">
-        <span>Sharon's Accounting Service</span>
+        <span>Sharon&apos;s Accounting Service</span>
         <span className="opacity-85">📍 Casino NSW &amp; surrounds</span>
         <a href="tel:1300017167" className="text-primary-foreground flex items-center gap-1">📞 1300 017 167</a>
         <a href="mailto:info@sharonogier.com" className="text-primary-foreground flex items-center gap-1">✉ info@sharonogier.com</a>
-        <Link to="/landing" className="bg-primary-foreground/20 text-primary-foreground px-4 py-1 rounded-full font-extrabold">
+        <Link to="/auth?mode=signin" className="bg-primary-foreground/20 text-primary-foreground px-4 py-1 rounded-full font-extrabold">
           Mustered Login
         </Link>
       </div>
 
       <div className="max-w-[1380px] mx-auto p-6 grid grid-cols-1 lg:grid-cols-[250px_1fr] gap-6 items-start">
-        {/* Sidebar */}
         <aside className="lg:sticky lg:top-6 bg-card border border-border rounded-xl p-4 flex flex-col gap-4 shadow-brand">
           <div className="rounded-[22px] p-4 text-primary-foreground text-center" style={{ background: "var(--gradient-brand)" }}>
             <img
@@ -64,7 +62,7 @@ export default function HomePage() {
               alt="Sharon's Accounting Service logo"
               className="w-full max-w-[130px] mx-auto mb-3 rounded-md bg-primary-foreground/15 p-1"
             />
-            <h2 className="text-base font-bold mb-1 font-serif">Sharon's Accounting Service</h2>
+            <h2 className="text-base font-bold mb-1 font-serif">Sharon&apos;s Accounting Service</h2>
             <p className="text-sm opacity-90">Financial clarity and practical business insight for farms and small business. Creator of Mustered.</p>
             <p className="text-xs opacity-85 mt-2">📍 Casino NSW &amp; surrounds</p>
           </div>
@@ -91,7 +89,7 @@ export default function HomePage() {
           </nav>
 
           <div className="grid gap-3">
-            <Link to="/landing" className="flex justify-center items-center w-full py-3 px-4 rounded-md font-extrabold bg-primary text-primary-foreground">
+            <Link to="/auth?mode=signin" className="flex justify-center items-center w-full py-3 px-4 rounded-md font-extrabold bg-primary text-primary-foreground">
               Mustered Login
             </Link>
             <a
@@ -105,13 +103,10 @@ export default function HomePage() {
           </div>
         </aside>
 
-        {/* Main content */}
         <main className="min-w-0">
-          {/* HOME */}
           {activePage === "home" && (
             <section>
               <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr] gap-5 mb-5">
-                {/* Hero card */}
                 <div className="bg-card border border-border rounded-xl shadow-brand p-6">
                   <span className="inline-block px-3 py-1 rounded-full bg-secondary text-primary text-sm font-extrabold mb-4">
                     Bookkeeping, financial analysis &amp; business software — Casino NSW
@@ -123,7 +118,7 @@ export default function HomePage() {
                     Sharon handles the books, the BAS, the invoices and the reporting — and goes further to analyse what the numbers actually mean for your business. Plus we built Mustered — our own business management platform now available to tradies, farmers and small businesses across Australia.
                   </p>
                   <div className="flex gap-3 flex-wrap mb-5">
-                    <Link to="/landing" className="inline-flex justify-center items-center px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
+                    <Link to="/auth?mode=signin" className="inline-flex justify-center items-center px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
                       Mustered Login
                     </Link>
                     <a
@@ -135,7 +130,7 @@ export default function HomePage() {
                       Book a Review
                     </a>
                     <Link
-                      to="/landing"
+                      to="/auth?mode=signup"
                       className="inline-flex justify-center items-center px-6 py-3 rounded-md font-extrabold text-primary hover:text-primary/80 transition-colors"
                     >
                       Try Mustered free →
@@ -151,7 +146,6 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Portal preview card */}
                 <div className="bg-card border border-border rounded-xl shadow-brand p-6">
                   <span className="inline-block px-3 py-1 rounded-full bg-secondary text-primary text-sm font-extrabold mb-4">
                     Mustered — Business Management Platform
@@ -168,7 +162,7 @@ export default function HomePage() {
                     </div>
                   </div>
                   <Link
-                    to="/landing"
+                    to="/auth?mode=signup"
                     className="inline-flex mt-4 px-5 py-2 rounded-md font-bold bg-primary text-primary-foreground text-sm"
                   >
                     Try Mustered free for 14 days →
@@ -177,7 +171,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* NEW: Mustered Feature Section */}
               <div className="bg-secondary/60 border border-primary/15 rounded-xl shadow-brand p-6 mb-5">
                 <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-extrabold mb-4">
                   Introducing Mustered
@@ -197,7 +190,7 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="flex gap-3 flex-wrap items-center">
-                  <Link to="/landing" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground text-sm">
+                  <Link to="/auth?mode=signup" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground text-sm">
                     Try Mustered free for 14 days →
                   </Link>
                   <button
@@ -210,7 +203,6 @@ export default function HomePage() {
                 <p className="text-muted-foreground text-xs mt-2">$59/month. 14-day free trial. No credit card required.</p>
               </div>
 
-              {/* Mitchell section */}
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
                 <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-center">
                   <div className="w-[100px] h-[100px] rounded-full bg-secondary flex items-center justify-center text-5xl mx-auto md:mx-0">
@@ -231,11 +223,10 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Bottom purple banner */}
               <div className="rounded-xl p-6 text-primary-foreground shadow-brand mb-5" style={{ background: "var(--gradient-brand)" }}>
                 <h3 className="text-lg font-bold mb-2 text-primary-foreground font-serif">Built for real Australian businesses — by someone who works with them every day.</h3>
                 <p className="opacity-90 text-sm mb-3">
-                  Sharon's Accounting Service has worked with tradies, farmers and small businesses across Northern NSW for years. Mustered was born from that experience — every feature designed around how Australian businesses actually work, not how corporate software thinks they should.
+                  Sharon&apos;s Accounting Service has worked with tradies, farmers and small businesses across Northern NSW for years. Mustered was born from that experience — every feature designed around how Australian businesses actually work, not how corporate software thinks they should.
                 </p>
                 <p className="text-primary-foreground font-bold text-sm">
                   Accounting by Sharon. Software by Mustered.<br />
@@ -245,7 +236,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* SERVICES */}
           {activePage === "services" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
@@ -265,7 +255,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* FARM EQUIPMENT */}
           {activePage === "farm-equipment" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
@@ -297,17 +286,16 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* ABOUT */}
           {activePage === "about" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6">
                 <span className="inline-block px-3 py-1 rounded-full bg-secondary text-primary text-sm font-extrabold mb-4">About</span>
-                <h2 className="text-3xl font-black mb-3 text-foreground">About Sharon's Accounting Service</h2>
+                <h2 className="text-3xl font-black mb-3 text-foreground">About Sharon&apos;s Accounting Service</h2>
                 <p className="text-muted-foreground leading-relaxed mb-4">
                   Sharon Ogier is a qualified accountant based in Casino, NSW. She provides bookkeeping, BAS lodgement, financial analysis and reporting for small businesses and farms across the Northern Rivers region.
                 </p>
                 <p className="text-muted-foreground leading-relaxed mb-4">
-                  What sets Sharon apart is that she doesn't just process the numbers — she explains what they mean. Her clients get clarity on cash flow, profitability, and where their business is actually heading.
+                  What sets Sharon apart is that she doesn&apos;t just process the numbers — she explains what they mean. Her clients get clarity on cash flow, profitability, and where their business is actually heading.
                 </p>
                 <p className="text-muted-foreground leading-relaxed">
                   Every client gets access to the portal — a secure, purpose-built system for invoices, expenses, documents and financial reports. And now, Sharon has built Mustered — a business management platform available to tradies, farmers and small businesses across Australia.
@@ -316,8 +304,6 @@ export default function HomePage() {
             </section>
           )}
 
-
-          {/* MUSTERED */}
           {activePage === "mustered" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
@@ -337,10 +323,10 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="flex gap-3 flex-wrap">
-                  <Link to="/landing" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
+                  <Link to="/auth?mode=signup" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
                     Try Mustered free for 14 days →
                   </Link>
-                  <Link to="/landing" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-card text-primary border border-border">
+                  <Link to="/auth?mode=signin" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-card text-primary border border-border">
                     Mustered Login
                   </Link>
                 </div>
@@ -362,7 +348,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* WHY SHARON */}
           {activePage === "why" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6">
@@ -387,7 +372,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* WHY MITCHELL */}
           {activePage === "why-mitchell" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
@@ -413,12 +397,11 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Farm Equipment Assessment Services */}
               <div className="bg-card border border-border rounded-xl shadow-brand p-6 mb-5">
                 <span className="inline-block px-3 py-1 rounded-full bg-secondary text-primary text-sm font-extrabold mb-4">Farm Equipment Assessments</span>
                 <h3 className="text-2xl font-black mb-3 text-foreground">What Mitchell can assess</h3>
                 <p className="text-muted-foreground leading-relaxed mb-5">
-                  Mitchell provides independent, on-site assessments for all types of farm equipment. Whether you're buying, selling, or managing your fleet — he delivers practical, well-documented reports.
+                  Mitchell provides independent, on-site assessments for all types of farm equipment. Whether you&apos;re buying, selling, or managing your fleet — he delivers practical, well-documented reports.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {[
@@ -438,7 +421,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* CTA */}
               <div className="rounded-xl p-6 text-primary-foreground shadow-brand" style={{ background: "var(--gradient-brand)" }}>
                 <h3 className="text-lg font-bold mb-2 text-primary-foreground font-serif">Need a farm equipment assessment?</h3>
                 <p className="opacity-90 text-sm mb-4">
@@ -465,7 +447,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* CONTACT */}
           {activePage === "contact" && (
             <section>
               <div className="bg-card border border-border rounded-xl shadow-brand p-6">
@@ -488,7 +469,7 @@ export default function HomePage() {
                       <a href="https://calendly.com/sharonogier-info" target="_blank" rel="noopener noreferrer" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-primary text-primary-foreground text-sm">
                         Book a Review
                       </a>
-                      <Link to="/landing" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-card text-primary border border-border text-sm">
+                      <Link to="/auth?mode=signin" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-card text-primary border border-border text-sm">
                         Mustered Login
                       </Link>
                     </div>
