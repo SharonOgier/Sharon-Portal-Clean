@@ -49,7 +49,7 @@ export default function HomePage() {
         <span className="opacity-85">📍 Casino NSW &amp; surrounds</span>
         <a href="tel:1300017167" className="text-primary-foreground flex items-center gap-1">📞 1300 017 167</a>
         <a href="mailto:info@sharonogier.com" className="text-primary-foreground flex items-center gap-1">✉ info@sharonogier.com</a>
-        <Link to="/auth?mode=signin" className="bg-primary-foreground/20 text-primary-foreground px-4 py-1 rounded-full font-extrabold">
+        <Link to="/landing" className="bg-primary-foreground/20 text-primary-foreground px-4 py-1 rounded-full font-extrabold">
           Mustered Login
         </Link>
       </div>
@@ -89,7 +89,7 @@ export default function HomePage() {
           </nav>
 
           <div className="grid gap-3">
-            <Link to="/auth?mode=signin" className="flex justify-center items-center w-full py-3 px-4 rounded-md font-extrabold bg-primary text-primary-foreground">
+            <Link to="/landing" className="flex justify-center items-center w-full py-3 px-4 rounded-md font-extrabold bg-primary text-primary-foreground">
               Mustered Login
             </Link>
             <a
@@ -118,7 +118,7 @@ export default function HomePage() {
                     Sharon handles the books, the BAS, the invoices and the reporting — and goes further to analyse what the numbers actually mean for your business. Plus we built Mustered — our own business management platform now available to tradies, farmers and small businesses across Australia.
                   </p>
                   <div className="flex gap-3 flex-wrap mb-5">
-                    <Link to="/auth?mode=signin" className="inline-flex justify-center items-center px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
+                    <Link to="/landing" className="inline-flex justify-center items-center px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
                       Mustered Login
                     </Link>
                     <a
@@ -326,7 +326,7 @@ export default function HomePage() {
                   <Link to="/auth?mode=signup" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-primary text-primary-foreground">
                     Try Mustered free for 14 days →
                   </Link>
-                  <Link to="/auth?mode=signin" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-card text-primary border border-border">
+                  <Link to="/landing" className="inline-flex px-6 py-3 rounded-md font-extrabold bg-card text-primary border border-border">
                     Mustered Login
                   </Link>
                 </div>
@@ -469,7 +469,7 @@ export default function HomePage() {
                       <a href="https://calendly.com/sharonogier-info" target="_blank" rel="noopener noreferrer" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-primary text-primary-foreground text-sm">
                         Book a Review
                       </a>
-                      <Link to="/auth?mode=signin" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-card text-primary border border-border text-sm">
+                      <Link to="/landing" className="inline-flex px-5 py-2.5 rounded-md font-bold bg-card text-primary border border-border text-sm">
                         Mustered Login
                       </Link>
                     </div>
