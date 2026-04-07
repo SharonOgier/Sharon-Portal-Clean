@@ -26,7 +26,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/landing" element={<LandingPage />} />
             <Route path="/auth" element={<AuthPage />} />
-            <Route path="/portal" element={<PortalPage />} />
+            <Route path="/portal" element={<div>PORTAL WORKS</div>} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/farm-equipment" element={<FarmEquipmentPage />} />
             <Route path="/quote/view" element={<QuoteViewPage />} />
