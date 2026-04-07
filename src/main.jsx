@@ -1,5 +1,10 @@
-import PortalPage from "./pages/PortalPage";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./index.css";
+import App from "./App.jsx";
 
-export default function App() {
-  return <PortalPage />;
-}
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
