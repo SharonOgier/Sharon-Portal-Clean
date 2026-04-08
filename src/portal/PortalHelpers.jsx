@@ -131,7 +131,7 @@ export function getNavLabels(businessType) {
 export const navSections = NAV_SECTIONS_TEMPLATE;
 export const navLabels = NAV_LABELS_BASE;
 
-export const settingsTabs = ["Profile", "Financial", "Branding", "Plan & Billing", "Team", "Notifications", "Security"];
+export const settingsTabs = ["Profile", "Financial", "Branding", "Plan & Billing", "Team", "Price Lists", "Notifications", "Security"];
 
 const LOGO_DOCUMENT_MAX_HEIGHT = 140;
 const LOGO_DOCUMENT_MAX_WIDTH = 440;
@@ -256,6 +256,7 @@ export const SUPABASE_TABLES = {
   properties: "sas_properties",
   jobs: "sas_jobs",
   recurringReminders: "sas_recurring_reminders",
+  supplierPriceLists: "sas_supplier_price_lists",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import EntityLink from "../EntityLink";
 import { exportToCSV } from "../PortalHelpers";
 import {
@@ -34,6 +34,7 @@ function QuotesPageInner(props) {
     invoices,
     quotes,
     services,
+    supplierPriceLists = [],
     quoteForm,
     setQuoteForm,
     quoteWizardStep,
@@ -131,6 +132,54 @@ function QuotesPageInner(props) {
     const quoteMoney = (value) => formatCurrencyByCode(value, quoteCurrencyCode);
     const quoteAdjustments = calculateAdjustmentValues({ subtotal: qSubtotal, total: qTotal, client: quoteClient, profile });
     const quoteGstStatus = clientIsGstExempt(quoteForm.clientId) ? "GST not applicable" : qGst > 0 ? "GST applies" : "GST free";
+    const [showItemSearch, setShowItemSearch] = useState(false);
+    const [itemSearchTerm, setItemSearchTerm] = useState("");
+
+    const searchableSupplierItems = useMemo(() => {
+      const flattened = (Array.isArray(supplierPriceLists) ? supplierPriceLists : []).flatMap((list) =>
+        (Array.isArray(list?.items) ? list.items : [])
+          .filter((item) => item?.isActive !== false)
+          .map((item) => ({
+            supplierName: list?.supplierName || "",
+            currency: list?.currency || "AUD",
+            name: String(item?.name || item?.itemName || "").trim(),
+            itemCode: String(item?.itemCode || "").trim(),
+            unit: String(item?.unit || "each").trim() || "each",
+            buyPrice: Number(item?.buyPrice ?? 0) || 0,
+            sellPrice: Number(item?.sellPrice ?? 0) || 0,
+            gstApplicable: Boolean(item?.gstApplicable),
+          }))
+      ).filter((item) => item.name);
+      const term = String(itemSearchTerm || "").toLowerCase().trim();
+      if (!term) return flattened.slice(0, 100);
+      return flattened
+        .filter((item) =>
+          item.name.toLowerCase().includes(term) ||
+          item.itemCode.toLowerCase().includes(term) ||
+          item.supplierName.toLowerCase().includes(term)
+        )
+        .slice(0, 100);
+    }, [supplierPriceLists, itemSearchTerm]);
+
+    const addItemFromPriceList = (item) => {
+      const exempt = clientIsGstExempt(quoteForm.clientId);
+      const newItem = {
+        id: createLocalId(),
+        description: item.name,
+        unit: item.unit || "each",
+        quantity: 1,
+        buyPrice: item.buyPrice ?? 0,
+        unitPrice: item.sellPrice ?? 0,
+        gstType: exempt ? "GST Free" : (item.gstApplicable ? "GST on Income (10%)" : "GST Free"),
+        supplierItemCode: item.itemCode || "",
+      };
+      setQuoteForm((prev) => ({
+        ...prev,
+        lineItems: [...(prev.lineItems || []).filter((l) => l.description || l.unitPrice), newItem],
+      }));
+      setShowItemSearch(false);
+      setItemSearchTerm("");
+    };
 
     const totalQuoted = quotes.reduce((s, q) => s + safeNumber(q.total), 0);
     const acceptedQuotes = quotes.filter((q) => q.status === "Accepted");
@@ -406,7 +455,9 @@ function QuotesPageInner(props) {
                       const newItem = {
                         id: createLocalId(),
                         description: svc.name + (svc.description ? " -- " + svc.description : ""),
+                        unit: "each",
                         quantity: 1,
+                        buyPrice: "",
                         unitPrice: String(svc.price ?? ""),
                         gstType: exempt ? "GST Free" : (svc.gstType || "GST on Income (10%)"),
                       };
@@ -424,11 +475,42 @@ function QuotesPageInner(props) {
                   <div style={{ fontSize: 11, color: colours.muted, flexBasis: "100%" }}>Pick as many as you need -- descriptions and prices are editable without affecting saved services</div>
                 </div>
               )}
+              {showItemSearch && (
+                <div style={{ ...cardStyle, padding: 14, background: colours.lightTeal, display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: colours.teal }}>Search Supplier Items</div>
+                    <button style={{ ...buttonSecondary, padding: "6px 12px", fontSize: 12 }} onClick={() => setShowItemSearch(false)}>Close</button>
+                  </div>
+                  <input
+                    style={inputStyle}
+                    value={itemSearchTerm}
+                    onChange={(e) => setItemSearchTerm(e.target.value)}
+                    placeholder="Type item name, code, or supplier"
+                  />
+                  <div style={{ maxHeight: 260, overflowY: "auto", border: `1px solid ${colours.border}`, borderRadius: 10, background: colours.white }}>
+                    {searchableSupplierItems.map((item, idx) => (
+                      <button
+                        key={`${item.supplierName}-${item.itemCode || item.name}-${idx}`}
+                        onClick={() => addItemFromPriceList(item)}
+                        style={{ width: "100%", border: "none", borderBottom: `1px solid ${colours.border}`, background: "transparent", cursor: "pointer", padding: "10px 12px", textAlign: "left" }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: colours.text }}>{item.name}</div>
+                        <div style={{ fontSize: 11, color: colours.muted, marginTop: 4 }}>
+                          {item.itemCode ? `${item.itemCode} • ` : ""}{item.supplierName} • {item.unit || "each"} • Buy {currency(item.buyPrice)} • Sell {currency(item.sellPrice)} • {item.gstApplicable ? "GST" : "GST Free"}
+                        </div>
+                      </button>
+                    ))}
+                    {searchableSupplierItems.length === 0 && (
+                      <div style={{ padding: "12px 14px", fontSize: 13, color: colours.muted }}>No matching active supplier items.</div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
                   <thead>
                     <tr style={{ background: colours.bg }}>
-                      {["Description", "Qty", "Unit Price (ex GST)", "GST Type", "GST", "Total", ""].map((h) => (
+                      {["Description", "Unit", "Qty", "Buy", "Sell (ex GST)", "GST Type", "GST", "Total", ""].map((h) => (
                         <th key={h} style={{ padding: "10px 8px", textAlign: "left", fontSize: 12, fontWeight: 700, color: colours.muted, borderBottom: `1px solid ${colours.border}` }}>{h}</th>
                       ))}
                     </tr>
@@ -448,9 +530,19 @@ function QuotesPageInner(props) {
                               onChange={(e) => setQuoteForm((prev) => ({ ...prev, lineItems: prev.lineItems.map((l, i) => i === idx ? { ...l, description: e.target.value } : l) }))}
                               placeholder="Description" />
                           </td>
+                          <td style={{ padding: "8px 6px", width: 90 }}>
+                            <input style={{ ...inputStyle, fontSize: 13 }} value={item.unit || ""}
+                              onChange={(e) => setQuoteForm((prev) => ({ ...prev, lineItems: prev.lineItems.map((l, i) => i === idx ? { ...l, unit: e.target.value } : l) }))}
+                              placeholder="each" />
+                          </td>
                           <td style={{ padding: "8px 6px", width: 70 }}>
                             <input type="number" min="1" style={{ ...inputStyle, fontSize: 13 }} value={item.quantity}
                               onChange={(e) => setQuoteForm((prev) => ({ ...prev, lineItems: prev.lineItems.map((l, i) => i === idx ? { ...l, quantity: e.target.value } : l) }))} />
+                          </td>
+                          <td style={{ padding: "8px 6px", width: 110 }}>
+                            <input type="number" min="0" step="0.01" style={{ ...inputStyle, fontSize: 13 }} value={item.buyPrice ?? ""}
+                              onChange={(e) => setQuoteForm((prev) => ({ ...prev, lineItems: prev.lineItems.map((l, i) => i === idx ? { ...l, buyPrice: e.target.value } : l) }))}
+                              placeholder="0.00" />
                           </td>
                           <td style={{ padding: "8px 6px", width: 130 }}>
                             <input type="number" min="0" step="0.01" style={{ ...inputStyle, fontSize: 13 }} value={item.unitPrice}
@@ -478,8 +570,10 @@ function QuotesPageInner(props) {
                 </table>
               </div>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={() => setQuoteForm((prev) => ({ ...prev, lineItems: [...(prev.lineItems || []), { id: createLocalId(), description: "", quantity: 1, unitPrice: "", gstType: "GST on Income (10%)" }] }))}
+                <button onClick={() => setQuoteForm((prev) => ({ ...prev, lineItems: [...(prev.lineItems || []), { id: createLocalId(), description: "", unit: "each", quantity: 1, buyPrice: "", unitPrice: "", gstType: "GST on Income (10%)" }] }))}
                   style={{ ...buttonSecondary, fontSize: 13, padding: "7px 14px" }}>+ Add line</button>
+                <button onClick={() => setShowItemSearch((prev) => !prev)}
+                  style={{ ...buttonSecondary, fontSize: 13, padding: "7px 14px" }}>Search Items</button>
                 <span style={{ fontSize: 13, color: colours.muted }}>{(quoteForm.lineItems || []).length} line{(quoteForm.lineItems || []).length !== 1 ? "s" : ""}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>

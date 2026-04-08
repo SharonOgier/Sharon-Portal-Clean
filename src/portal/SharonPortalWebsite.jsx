@@ -184,6 +184,7 @@ export default function AccountingPortalPrototype() {
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [recurringReminders, setRecurringReminders] = useState([]);
+  const [supplierPriceLists, setSupplierPriceLists] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -475,6 +476,7 @@ export default function AccountingPortalPrototype() {
     setServices([]);
     setDocuments([]);
     setRecurringReminders([]);
+    setSupplierPriceLists([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -881,12 +883,13 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
         safeF(SUPABASE_TABLES.assets), safeF(SUPABASE_TABLES.properties), safeF(SUPABASE_TABLES.jobs),
         safeF(SUPABASE_TABLES.recurringReminders),
+        safeF(SUPABASE_TABLES.supplierPriceLists),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -905,6 +908,7 @@ export default function AccountingPortalPrototype() {
       setProperties(Array.isArray(rProperties) ? rProperties : []);
       setJobs(Array.isArray(rJobs) ? rJobs : []);
       setRecurringReminders(Array.isArray(rRecurringReminders) ? rRecurringReminders : []);
+      setSupplierPriceLists(Array.isArray(rSupplierPriceLists) ? rSupplierPriceLists : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1298,6 +1302,41 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+  const saveSupplierPriceList = async (payload, opts = {}) => {
+    try {
+      const timestamp = new Date().toISOString();
+      const prepared = {
+        ...payload,
+        dateLastUpdated: payload?.dateLastUpdated || timestamp.slice(0, 10),
+        updatedAt: timestamp,
+      };
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.supplierPriceLists, prepared);
+      setSupplierPriceLists((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists
+          ? prev.map((r) => (String(r.id) === String(saved.id) ? saved : r))
+          : [...prev, saved];
+      });
+      if (!opts.silent) {
+        toast.success(payload?.id ? "Price list updated!" : "Price list created!");
+      }
+      return saved;
+    } catch (err) {
+      toast.error(err.message || "Failed to save price list");
+      return null;
+    }
+  };
+
+  const deleteSupplierPriceList = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.supplierPriceLists, id);
+      setSupplierPriceLists((prev) => prev.filter((r) => String(r.id) !== String(id)));
+      toast.success("Price list deleted");
+    } catch (err) {
+      toast.error(err.message || "Failed to delete price list");
+    }
+  };
+
   const sendRecurringReminderNow = async (reminderId) => {
     try {
       const { data, error } = await supabase.functions.invoke("send-recurring-reminders", {
@@ -1448,6 +1487,7 @@ export default function AccountingPortalPrototype() {
       setServices([]);
       setDocuments([]);
       setRecurringReminders([]);
+      setSupplierPriceLists([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -1969,6 +2009,7 @@ export default function AccountingPortalPrototype() {
         { name: "documents",     items: documents,     table: SUPABASE_TABLES.documents },
         { name: "suppliers",     items: suppliers,     table: SUPABASE_TABLES.suppliers },
         { name: "recurring reminders", items: recurringReminders, table: SUPABASE_TABLES.recurringReminders },
+        { name: "supplier price lists", items: supplierPriceLists, table: SUPABASE_TABLES.supplierPriceLists },
       ];
 
       const saveResults = await Promise.all(
@@ -2020,6 +2061,7 @@ export default function AccountingPortalPrototype() {
         remoteProperties,
         remoteJobs,
         remoteRecurringReminders,
+        remoteSupplierPriceLists,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2034,6 +2076,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.properties),
         safeF(SUPABASE_TABLES.jobs),
         safeF(SUPABASE_TABLES.recurringReminders),
+        safeF(SUPABASE_TABLES.supplierPriceLists),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2078,6 +2121,7 @@ export default function AccountingPortalPrototype() {
       setProperties(Array.isArray(remoteProperties) ? remoteProperties : []);
       setJobs(Array.isArray(remoteJobs) ? remoteJobs : []);
       setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
+      setSupplierPriceLists(Array.isArray(remoteSupplierPriceLists) ? remoteSupplierPriceLists : []);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2155,6 +2199,7 @@ export default function AccountingPortalPrototype() {
       sas_properties:      { setter: setProperties,     key: "properties" },
       sas_profile:         { setter: null,               key: "profile" },
       sas_recurring_reminders: { setter: setRecurringReminders, key: "scheduling" },
+      sas_supplier_price_lists: { setter: setSupplierPriceLists, key: "settings" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2235,6 +2280,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_properties",     filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_profile",        filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_recurring_reminders", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_supplier_price_lists", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5082,6 +5128,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             {activePage === "quotes" && <QuotesPage
               profile={profile} clients={clients} invoices={invoices}
               quotes={quotes} services={services}
+              supplierPriceLists={supplierPriceLists}
               quoteForm={quoteForm} setQuoteForm={setQuoteForm}
               quoteWizardStep={quoteWizardStep} setQuoteWizardStep={setQuoteWizardStep}
               quoteEditorOpen={quoteEditorOpen} quoteEditorForm={quoteEditorForm}
@@ -5209,6 +5256,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}
               recurringReminders={recurringReminders}
+              supplierPriceLists={supplierPriceLists}
               quotes={quotes} invoices={invoices}
               colours={colours} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
@@ -5386,6 +5434,9 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               authUserEmail={authUser?.email || ""}
               teamMembers={teamMembers} setTeamMembers={setTeamMembers}
               teamInvitations={teamInvitations} setTeamInvitations={setTeamInvitations}
+              supplierPriceLists={supplierPriceLists}
+              saveSupplierPriceList={saveSupplierPriceList}
+              deleteSupplierPriceList={deleteSupplierPriceList}
               supabase={supabase} authUser={authUser}
             />}
             </>}

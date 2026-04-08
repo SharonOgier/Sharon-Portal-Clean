@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import PlanSelectionCards from "../components/PlanSelectionCards";
 import { getUserTier, TIERS, TIER_ORDER } from "../tierConfig";
 // SettingsPage
@@ -44,6 +44,9 @@ export default function SettingsPage(props) {
     setTeamMembers = () => {},
     teamInvitations = [],
     setTeamInvitations = () => {},
+    supplierPriceLists = [],
+    saveSupplierPriceList = async () => null,
+    deleteSupplierPriceList = async () => null,
     supabase = null,
     authUser = null,
   } = props;
@@ -52,6 +55,8 @@ export default function SettingsPage(props) {
   const [sendingInvite, setSendingInvite] = useState(false);
   const [subcontractorInviteEmail, setSubcontractorInviteEmail] = useState("");
   const [sendingSubcontractorInvite, setSendingSubcontractorInvite] = useState(false);
+  const [activePriceListId, setActivePriceListId] = useState("");
+  const [priceItemSearch, setPriceItemSearch] = useState("");
 
   const OWNER_OVERRIDE_EMAILS = ["info@sharonogier.com", "sharonlogier@gmail.com"];
   const isOwner = OWNER_OVERRIDE_EMAILS.includes((authUserEmail || "").toLowerCase().trim());
@@ -106,6 +111,223 @@ export default function SettingsPage(props) {
     const query = nextParams.toString();
     return `${window.location.origin}/auth${query ? `?${query}` : ""}`;
   };
+
+  const createItemId = () => {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    return `supplier-item-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  };
+
+  const normalisePriceItems = (items = []) =>
+    (Array.isArray(items) ? items : []).map((item) => {
+      const buy = Number(item?.buyPrice ?? 0);
+      const sell = Number(item?.sellPrice ?? 0);
+      return {
+        id: item?.id || createItemId(),
+        name: String(item?.name || item?.itemName || "").trim(),
+        itemCode: String(item?.itemCode || "").trim(),
+        unit: String(item?.unit || "each").trim() || "each",
+        buyPrice: Number.isFinite(buy) ? buy : 0,
+        sellPrice: Number.isFinite(sell) ? sell : 0,
+        gstApplicable: Boolean(item?.gstApplicable),
+        isActive: item?.isActive !== false,
+      };
+    });
+
+  const sortedPriceLists = useMemo(
+    () => [...(Array.isArray(supplierPriceLists) ? supplierPriceLists : [])].sort((a, b) => String(a?.supplierName || "").localeCompare(String(b?.supplierName || ""))),
+    [supplierPriceLists]
+  );
+
+  const selectedPriceListId = useMemo(() => {
+    if (!sortedPriceLists.length) return "";
+    if (sortedPriceLists.some((list) => String(list.id) === String(activePriceListId))) return String(activePriceListId);
+    return String(sortedPriceLists[0].id);
+  }, [activePriceListId, sortedPriceLists]);
+
+  const selectedPriceList = useMemo(
+    () => sortedPriceLists.find((list) => String(list.id) === String(selectedPriceListId)) || null,
+    [selectedPriceListId, sortedPriceLists]
+  );
+
+  const upsertPriceList = async (nextList, successMessage) => {
+    const payload = {
+      ...nextList,
+      supplierName: String(nextList?.supplierName || "").trim(),
+      currency: String(nextList?.currency || "AUD").trim() || "AUD",
+      dateLastUpdated: nextList?.dateLastUpdated || new Date().toISOString().slice(0, 10),
+      items: normalisePriceItems(nextList?.items || []),
+    };
+    if (!payload.supplierName) {
+      toast.error("Supplier name is required.");
+      return null;
+    }
+    const saved = await saveSupplierPriceList(payload, { silent: !successMessage });
+    if (saved) {
+      setActivePriceListId(String(saved.id));
+      if (successMessage) toast.success(successMessage);
+    }
+    return saved;
+  };
+
+  const createPriceList = async () => {
+    const saved = await upsertPriceList({
+      supplierName: `Supplier ${sortedPriceLists.length + 1}`,
+      currency: "AUD",
+      dateLastUpdated: new Date().toISOString().slice(0, 10),
+      items: [],
+    });
+    if (saved) {
+      setActivePriceListId(String(saved.id));
+    }
+  };
+
+  const duplicatePriceList = async (list) => {
+    if (!list) return;
+    await upsertPriceList({
+      supplierName: `${list.supplierName || "Supplier"} (Copy)`,
+      currency: list.currency || "AUD",
+      dateLastUpdated: new Date().toISOString().slice(0, 10),
+      items: normalisePriceItems(list.items || []).map((item) => ({ ...item, id: createItemId() })),
+    }, "Price list duplicated");
+  };
+
+  const updateSelectedPriceList = async (changes) => {
+    if (!selectedPriceList) return;
+    await upsertPriceList({ ...selectedPriceList, ...changes });
+  };
+
+  const updateSelectedItem = async (itemId, changes) => {
+    if (!selectedPriceList) return;
+    const items = normalisePriceItems(selectedPriceList.items || []).map((item) =>
+      String(item.id) === String(itemId) ? { ...item, ...changes } : item
+    );
+    await updateSelectedPriceList({ items, dateLastUpdated: new Date().toISOString().slice(0, 10) });
+  };
+
+  const addPriceListItem = async () => {
+    if (!selectedPriceList) return;
+    const items = [...normalisePriceItems(selectedPriceList.items || []), {
+      id: createItemId(),
+      name: "",
+      itemCode: "",
+      unit: "each",
+      buyPrice: 0,
+      sellPrice: 0,
+      gstApplicable: true,
+      isActive: true,
+    }];
+    await updateSelectedPriceList({ items, dateLastUpdated: new Date().toISOString().slice(0, 10) });
+  };
+
+  const deletePriceListItem = async (itemId) => {
+    if (!selectedPriceList) return;
+    const items = normalisePriceItems(selectedPriceList.items || []).filter((item) => String(item.id) !== String(itemId));
+    await updateSelectedPriceList({ items, dateLastUpdated: new Date().toISOString().slice(0, 10) });
+  };
+
+  const downloadPriceListTemplate = () => {
+    const template = [
+      "item_name,item_code,unit,buy_price,sell_price,gst_applicable,is_active",
+      "Annual service kit,ASK-100,each,80.00,120.00,yes,yes",
+      "PVC pipe 20mm,PVC20,metre,4.50,7.20,yes,yes",
+    ].join("\n");
+    const blob = new Blob([template], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "supplier-price-list-template.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCsvLine = (line = "") => {
+    const out = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === "\"") {
+        if (inQuotes && line[i + 1] === "\"") {
+          current += "\"";
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === "," && !inQuotes) {
+        out.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    out.push(current.trim());
+    return out;
+  };
+
+  const parseBooleanCsvValue = (value, fallback = true) => {
+    const lowered = String(value || "").trim().toLowerCase();
+    if (!lowered) return fallback;
+    if (["y", "yes", "true", "1"].includes(lowered)) return true;
+    if (["n", "no", "false", "0"].includes(lowered)) return false;
+    return fallback;
+  };
+
+  const importPriceListCsv = async (file) => {
+    if (!selectedPriceList || !file) return;
+    try {
+      const csvText = await file.text();
+      const rows = csvText.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+      if (!rows.length) {
+        toast.error("CSV file is empty.");
+        return;
+      }
+      const headers = parseCsvLine(rows[0]).map((h) => String(h || "").trim().toLowerCase());
+      const findValue = (record, aliases, fallback = "") => {
+        const idx = aliases.map((alias) => headers.indexOf(alias)).find((v) => v >= 0);
+        return idx >= 0 ? record[idx] : fallback;
+      };
+      const importedItems = rows.slice(1).map((line) => parseCsvLine(line)).map((record) => {
+        const buyPrice = Number(findValue(record, ["buy_price", "buy price"], "0"));
+        const sellPrice = Number(findValue(record, ["sell_price", "sell price"], "0"));
+        return {
+          id: createItemId(),
+          name: findValue(record, ["item_name", "item name", "name"], ""),
+          itemCode: findValue(record, ["item_code", "item code", "code"], ""),
+          unit: findValue(record, ["unit"], "each") || "each",
+          buyPrice: Number.isFinite(buyPrice) ? buyPrice : 0,
+          sellPrice: Number.isFinite(sellPrice) ? sellPrice : 0,
+          gstApplicable: parseBooleanCsvValue(findValue(record, ["gst_applicable", "gst applicable", "gst"], "yes"), true),
+          isActive: parseBooleanCsvValue(findValue(record, ["is_active", "active"], "yes"), true),
+        };
+      }).filter((item) => item.name);
+
+      if (!importedItems.length) {
+        toast.error("No valid line items found in CSV.");
+        return;
+      }
+
+      const merged = [...normalisePriceItems(selectedPriceList.items || []), ...importedItems];
+      await updateSelectedPriceList({
+        items: merged,
+        dateLastUpdated: new Date().toISOString().slice(0, 10),
+      });
+      toast.success(`${importedItems.length} item${importedItems.length === 1 ? "" : "s"} imported`);
+    } catch (err) {
+      toast.error(err.message || "Failed to import CSV");
+    }
+  };
+
+  const visiblePriceItems = useMemo(() => {
+    const term = String(priceItemSearch || "").trim().toLowerCase();
+    const items = normalisePriceItems(selectedPriceList?.items || []);
+    if (!term) return items;
+    return items.filter((item) =>
+      String(item.name || "").toLowerCase().includes(term) ||
+      String(item.itemCode || "").toLowerCase().includes(term)
+    );
+  }, [priceItemSearch, selectedPriceList]);
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
@@ -871,6 +1093,249 @@ export default function SettingsPage(props) {
                 </ol>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeSettingsTab === "Price Lists" && (
+          <div style={{ display: "grid", gap: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: colours.text }}>Supplier Price Lists</div>
+                <div style={{ fontSize: 13, color: colours.muted, marginTop: 4 }}>
+                  Create one price list per supplier, import CSVs, and use these items in quotes and jobs.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button style={buttonSecondary} onClick={downloadPriceListTemplate}>Download CSV Template</button>
+                <button style={buttonPrimary} onClick={createPriceList}>+ New Price List</button>
+              </div>
+            </div>
+
+            {sortedPriceLists.length > 0 ? (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 0.7fr) minmax(0, 2fr)", gap: 16 }}>
+                  <div style={{ ...cardStyle, padding: 12, display: "grid", gap: 8, alignSelf: "start" }}>
+                    {sortedPriceLists.map((list) => {
+                      const isActive = String(list.id) === String(selectedPriceListId);
+                      return (
+                        <button
+                          key={list.id}
+                          onClick={() => setActivePriceListId(String(list.id))}
+                          style={{
+                            textAlign: "left",
+                            border: `1px solid ${isActive ? colours.purple : colours.border}`,
+                            background: isActive ? `${colours.purple}10` : colours.white,
+                            borderRadius: 10,
+                            padding: "10px 12px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: 700, color: colours.text }}>{list.supplierName || "Unnamed supplier"}</div>
+                          <div style={{ fontSize: 11, color: colours.muted, marginTop: 4 }}>
+                            {(Array.isArray(list.items) ? list.items.length : 0)} items • {list.currency || "AUD"} • Updated {list.dateLastUpdated || "—"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedPriceList && (
+                    <div style={{ ...cardStyle, padding: 14, display: "grid", gap: 14 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1.2fr) minmax(140px, 0.6fr) minmax(160px, 0.7fr)", gap: 10 }}>
+                        <div>
+                          <label style={labelStyle}>Supplier name</label>
+                          <input
+                            style={inputStyle}
+                            value={selectedPriceList.supplierName || ""}
+                            onChange={(e) => updateSelectedPriceList({ supplierName: e.target.value })}
+                            placeholder="Supplier name"
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Currency</label>
+                          <input
+                            style={inputStyle}
+                            value={selectedPriceList.currency || "AUD"}
+                            onChange={(e) => updateSelectedPriceList({ currency: e.target.value.toUpperCase() })}
+                            placeholder="AUD"
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Date last updated</label>
+                          <input
+                            type="date"
+                            style={inputStyle}
+                            value={selectedPriceList.dateLastUpdated || ""}
+                            onChange={(e) => updateSelectedPriceList({ dateLastUpdated: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button style={buttonSecondary} onClick={() => duplicatePriceList(selectedPriceList)}>Duplicate List</button>
+                          <button
+                            style={{ ...buttonSecondary, color: "#EF4444", borderColor: "#FECACA" }}
+                            onClick={() => confirm({
+                              title: "Delete this price list?",
+                              message: "This keeps historical quote/job data but removes this supplier list from future searches.",
+                              confirmLabel: "Delete",
+                              onConfirm: () => deleteSupplierPriceList(selectedPriceList.id),
+                            })}
+                          >
+                            Delete List
+                          </button>
+                        </div>
+                        <label style={{ ...buttonSecondary, cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+                          Import CSV
+                          <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) importPriceListCsv(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <input
+                          style={{ ...inputStyle, maxWidth: 360 }}
+                          value={priceItemSearch}
+                          onChange={(e) => setPriceItemSearch(e.target.value)}
+                          placeholder="Search item name or code"
+                        />
+                        <button style={buttonPrimary} onClick={addPriceListItem}>+ Add Item</button>
+                      </div>
+
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+                          <thead>
+                            <tr style={{ background: colours.bg }}>
+                              {["Item Name", "Item Code", "Unit", "Buy Price", "Sell Price", "GST", "Status", ""].map((header) => (
+                                <th key={header} style={{ padding: "10px 8px", textAlign: "left", fontSize: 12, fontWeight: 700, color: colours.muted, borderBottom: `1px solid ${colours.border}` }}>
+                                  {header}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visiblePriceItems.map((item) => {
+                              const sellBelowBuy = Number(item.sellPrice) < Number(item.buyPrice);
+                              return (
+                                <tr key={item.id} style={{ borderBottom: `1px solid ${colours.border}` }}>
+                                  <td style={{ padding: "8px 6px", minWidth: 220 }}>
+                                    <input
+                                      style={{ ...inputStyle, fontSize: 13 }}
+                                      value={item.name || ""}
+                                      onChange={(e) => updateSelectedItem(item.id, { name: e.target.value })}
+                                      placeholder="Item name"
+                                    />
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 120 }}>
+                                    <input
+                                      style={{ ...inputStyle, fontSize: 13 }}
+                                      value={item.itemCode || ""}
+                                      onChange={(e) => updateSelectedItem(item.id, { itemCode: e.target.value })}
+                                      placeholder="Optional"
+                                    />
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 120 }}>
+                                    <input
+                                      style={{ ...inputStyle, fontSize: 13 }}
+                                      value={item.unit || "each"}
+                                      onChange={(e) => updateSelectedItem(item.id, { unit: e.target.value })}
+                                      placeholder="each"
+                                    />
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 140 }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      style={{ ...inputStyle, fontSize: 13 }}
+                                      value={item.buyPrice ?? 0}
+                                      onChange={(e) => updateSelectedItem(item.id, { buyPrice: Number(e.target.value || 0) })}
+                                    />
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 180 }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      style={{
+                                        ...inputStyle,
+                                        fontSize: 13,
+                                        borderColor: sellBelowBuy ? "#FCA5A5" : inputStyle.borderColor,
+                                        background: sellBelowBuy ? "#FEF2F2" : inputStyle.background,
+                                      }}
+                                      value={item.sellPrice ?? 0}
+                                      onChange={(e) => updateSelectedItem(item.id, { sellPrice: Number(e.target.value || 0) })}
+                                    />
+                                    {sellBelowBuy && (
+                                      <div style={{ marginTop: 4, fontSize: 11, color: "#B91C1C", fontWeight: 600 }}>
+                                        Warning: sell price is below buy price.
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 110 }}>
+                                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colours.text }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(item.gstApplicable)}
+                                        onChange={(e) => updateSelectedItem(item.id, { gstApplicable: e.target.checked })}
+                                      />
+                                      GST
+                                    </label>
+                                  </td>
+                                  <td style={{ padding: "8px 6px", minWidth: 120 }}>
+                                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colours.text }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={item.isActive !== false}
+                                        onChange={(e) => updateSelectedItem(item.id, { isActive: e.target.checked })}
+                                      />
+                                      {item.isActive !== false ? "Active" : "Inactive"}
+                                    </label>
+                                  </td>
+                                  <td style={{ padding: "8px 6px", width: 40 }}>
+                                    <button
+                                      onClick={() => deletePriceListItem(item.id)}
+                                      style={{ background: "none", border: "none", cursor: "pointer", color: colours.muted, fontSize: 18, lineHeight: 1 }}
+                                    >
+                                      x
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {visiblePriceItems.length === 0 && (
+                              <tr>
+                                <td colSpan={8} style={{ padding: 16, fontSize: 13, color: colours.muted, textAlign: "center" }}>
+                                  No items found. Add one manually or import CSV.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ ...cardStyle, padding: 24 }}>
+                <EmptyState
+                  icon=""
+                  title="No supplier price lists yet"
+                  message="Create a supplier list to import item buy/sell prices and use them while quoting jobs."
+                  action={<button style={buttonPrimary} onClick={createPriceList}>Create your first price list</button>}
+                />
+              </div>
+            )}
           </div>
         )}
 

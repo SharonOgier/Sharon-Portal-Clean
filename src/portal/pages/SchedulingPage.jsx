@@ -632,6 +632,7 @@ const calcNextDate = (fromDate, freq) => {
 
 export default function SchedulingPage({
   jobs = [], clients = [], properties = [], recurringReminders = [], quotes = [], invoices = [], colours: c, cardStyle, buttonPrimary, buttonSecondary,
+  supplierPriceLists = [],
   inputStyle, labelStyle, DashboardHero, InsightChip, MetricCard, SectionCard, DataTable, EmptyState,
   saveJob, deleteJob, confirm, setActivePage, currency = (v) => `$${Number(v||0).toFixed(2)}`,
   authUser, profile = {}, createInvoiceFromJob,
@@ -1515,6 +1516,7 @@ export default function SchedulingPage({
               <JobCostingPanel
                 job={detailJob}
                 onUpdate={async (updated) => { await saveJob(updated); setDetailJob(updated); }}
+                supplierPriceLists={supplierPriceLists}
                 colours={colours} cardStyle={cardStyle} inputStyle={inputStyle} labelStyle={labelStyle}
                 buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
                 currency={currency} quotes={quotes} invoices={invoices}
