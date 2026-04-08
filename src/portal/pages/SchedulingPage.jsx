@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useTerminology } from "../TerminologyContext";
 import JobCostingPanel, { computeJobFinancials } from "./JobCostingPanel";
 import { writeJobSheetPreviewToWindow, writeCertificatePreviewToWindow, buildCertificateHtml } from "../PortalDocumentBuilders";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,6 +70,7 @@ const PriorityBadge = ({ priority }) => {
 
 /* ─── Job Photos Panel ─────────────────────────────────────────────────── */
 function JobPhotosPanel({ job, onUpdate, colours, buttonPrimary, buttonSecondary, authUser }) {
+  const { t } = useTerminology();
   const [uploading, setUploading] = useState(false);
   const [viewImg, setViewImg] = useState(null);
   const beforeRef = useRef(null);
@@ -148,7 +150,7 @@ function JobPhotosPanel({ job, onUpdate, colours, buttonPrimary, buttonSecondary
   return (
     <div>
       <p style={{ fontSize: 13, color: colours.muted, marginBottom: 16 }}>
-        Take before & after photos on site. They'll be auto-attached to this job and included in completion reports.
+        Take before & after photos on {t("site").toLowerCase()}. They'll be auto-attached to this {t("job").toLowerCase()} and included in completion reports.
       </p>
 
       {/* Before Photos */}
@@ -289,6 +291,7 @@ function SignaturePad({ onSave, existingSignature, colours, buttonPrimary, butto
 
 /* ─── Certificate of Completion Panel ──────────────────────────────────── */
 function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSecondary, inputStyle, labelStyle, profile, clients, properties, authUser }) {
+  const { t } = useTerminology();
   const cert = job.certificate || {};
   const [certNotes, setCertNotes] = useState(cert.notes || "");
   const [signedByName, setSignedByName] = useState(cert.signedByName || "");
@@ -405,7 +408,7 @@ function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSeconda
   return (
     <div>
       <p style={{ fontSize: 13, color: colours.muted, marginBottom: 16 }}>
-        Generate a Certificate of Completion for legal protection. Get the customer to sign on screen, then save as PDF to the job record.
+        Generate a Certificate of Completion for legal protection. Get the {t("customer").toLowerCase()} to sign on screen, then save as PDF to the {t("job").toLowerCase()} record.
       </p>
 
       {/* Status */}
@@ -438,8 +441,8 @@ function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSeconda
 
       {/* Signed by name */}
       <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Customer Name (Print)</label>
-        <input style={inputStyle} value={signedByName} onChange={e => setSignedByName(e.target.value)} placeholder="Customer's full name" />
+        <label style={labelStyle}>{t("customer")} Name (Print)</label>
+        <input style={inputStyle} value={signedByName} onChange={e => setSignedByName(e.target.value)} placeholder={`${t("customer")}'s full name`} />
       </div>
 
       {/* Notes */}
@@ -456,7 +459,7 @@ function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSeconda
 
       {/* Signature */}
       <div style={{ marginBottom: 20 }}>
-        <label style={{ ...labelStyle, marginBottom: 8 }}>Customer Signature</label>
+        <label style={{ ...labelStyle, marginBottom: 8 }}>{t("customer")} Signature</label>
         <SignaturePad
           onSave={handleSignatureSave}
           existingSignature={cert.signatureDataUrl}
@@ -473,7 +476,7 @@ function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSeconda
           👁️ Preview Certificate
         </button>
         <button style={{ ...buttonPrimary, opacity: generatingPdf ? 0.6 : 1 }} onClick={handleSavePdf} disabled={generatingPdf}>
-          {generatingPdf ? "Generating…" : "📄 Save PDF to Job"}
+          {generatingPdf ? "Generating…" : `📄 Save PDF to ${t("job")}`}
         </button>
       </div>
     </div>
@@ -482,6 +485,7 @@ function CertificatePanel({ job, onUpdate, colours, buttonPrimary, buttonSeconda
 
 /* ─── Job Notes & Tasks Panel ──────────────────────────────────────────── */
 function JobNotesTasksPanel({ job, onUpdate, colours, buttonPrimary, buttonSecondary, inputStyle, labelStyle }) {
+  const { t } = useTerminology();
   const internalNotes = job.internalNotes || [];
   const checklist = job.checklist || [];
 
@@ -539,7 +543,7 @@ function JobNotesTasksPanel({ job, onUpdate, colours, buttonPrimary, buttonSecon
       {/* ── Task Checklist ── */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 800, color: colours.text, margin: 0 }}>✅ Job Tasks</h3>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: colours.text, margin: 0 }}>✅ {t("job")} Tasks</h3>
           {totalTasks > 0 && (
             <span style={{ fontSize: 12, fontWeight: 700, color: progressPct === 100 ? "#2E7D32" : colours.purple }}>
               {completedCount}/{totalTasks} ({progressPct}%)
@@ -587,7 +591,7 @@ function JobNotesTasksPanel({ job, onUpdate, colours, buttonPrimary, buttonSecon
       {/* ── Internal Notes ── */}
       <div>
         <h3 style={{ fontSize: 15, fontWeight: 800, color: colours.text, margin: "0 0 12px" }}>🔒 Internal Notes</h3>
-        <p style={{ fontSize: 12, color: colours.muted, marginBottom: 12, marginTop: 0 }}>Private notes only visible to staff — never shown to customers.</p>
+        <p style={{ fontSize: 12, color: colours.muted, marginBottom: 12, marginTop: 0 }}>Private notes only visible to staff — never shown to {t("customers").toLowerCase()}.</p>
 
         <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
           {internalNotes.map(note => (
@@ -637,6 +641,7 @@ export default function SchedulingPage({
   authUser, profile = {}, createInvoiceFromJob,
   saveRecurringReminder, deleteRecurringReminder, sendRecurringReminderNow,
 }) {
+  const { t } = useTerminology();
   const colours = c;
   // Filter out admin/overhead pseudo-jobs from scheduling
   jobs = useMemo(() => jobs.filter(j => !j.isAdminJob), [jobs]);
@@ -699,7 +704,7 @@ export default function SchedulingPage({
   };
 
   const openNavigation = (address) => {
-    if (!address) { alert("No address found for this job. Add an address to the linked property or contact."); return; }
+    if (!address) { alert(`No address found for this ${t("job").toLowerCase()}. Add an address to the linked ${t("property").toLowerCase()} or contact.`); return; }
     const encoded = encodeURIComponent(address);
     // Detect iOS/macOS for Apple Maps, otherwise Google Maps
     const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
@@ -733,7 +738,7 @@ export default function SchedulingPage({
 
   const openReminderCreateForJob = (job) => {
     if (!job?.clientId) {
-      alert("This job has no linked contact. Link a contact first.");
+      alert(`This ${t("job").toLowerCase()} has no linked contact. Link a contact first.`);
       return;
     }
     const reminderName = `${job.title || "Service"} Due`;
@@ -747,7 +752,7 @@ export default function SchedulingPage({
       linkedJobType: job.jobType || job.title || "",
       clientId: String(job.clientId),
       clientName: getClientName(job.clientId),
-      messageToCustomer: "Hi [Name], it is time to book your [Reminder Name] with [Business Name]. Click here to request a booking: [link]",
+      messageToCustomer: `Hi [Name], it is time to book your [Reminder Name] with [Business Name]. Click here to request a booking: [link]`,
     });
     setShowReminderForm(true);
   };
@@ -1172,7 +1177,7 @@ export default function SchedulingPage({
                       {getJobAddress(j) && (
                         <button onClick={(e) => { e.stopPropagation(); openNavigation(getJobAddress(j)); }}
                           style={{ background: "rgba(255,255,255,0.25)", border: "none", borderRadius: 6, padding: "2px 6px", cursor: "pointer", color: "#fff", fontSize: 12, fontWeight: 700, marginLeft: 6, flexShrink: 0 }}
-                          title="Navigate to job site">📍</button>
+                          title={`Navigate to ${t("site").toLowerCase()}`}>📍</button>
                       )}
                     </div>
                     <div style={{ fontSize: 11, opacity: 0.85 }}>{fmtTime(j.startTime)} – {fmtTime(j.endTime)}</div>
@@ -1185,7 +1190,7 @@ export default function SchedulingPage({
         })}
         {dayJobs.length === 0 && (
           <div style={{ textAlign: "center", padding: 40, color: colours.muted }}>
-            No jobs scheduled for {fmtDateAU(dateStr)}
+            No {t("jobs").toLowerCase()} scheduled for {fmtDateAU(dateStr)}
           </div>
         )}
       </div>
@@ -1195,16 +1200,16 @@ export default function SchedulingPage({
   /* ═══════ LIST VIEW ═══════ */
   const ListView = () => {
     const sorted = [...filtered].sort((a, b) => (a.startDate || "").localeCompare(b.startDate || "") || (a.startTime || "").localeCompare(b.startTime || ""));
-    if (sorted.length === 0) return <EmptyState icon="📅" title="No jobs found" subtitle="Create your first job to get started" />;
+    if (sorted.length === 0) return <EmptyState icon="📅" title={`No ${t("jobs").toLowerCase()} found`} subtitle={`Create your first ${t("job").toLowerCase()} to get started`} />;
 
     return (
       <DataTable
         columns={[
-          { key: "title", label: "Job Title" },
+          { key: "title", label: `${t("job")} Title` },
           { key: "startDate", label: "Date", render: (_v, r) => fmtDateAU(r.startDate) },
           { key: "startTime", label: "Time", render: (_v, r) => fmtTime(r.startTime) },
           { key: "clientId", label: "Contact", render: (_v, r) => getClientName(r.clientId) },
-          { key: "propertyId", label: "Property", render: (_v, r) => getPropertyName(r.propertyId) },
+          { key: "propertyId", label: t("property"), render: (_v, r) => getPropertyName(r.propertyId) },
           { key: "status", label: "Status", render: (_v, r) => <StatusBadge status={r.status} colours={colours} /> },
           { key: "priority", label: "Priority", render: (_v, r) => <PriorityBadge priority={r.priority} /> },
         ]}
@@ -1221,14 +1226,14 @@ export default function SchedulingPage({
       return `${fmtDateAU(fmtDate(wd[0]))} – ${fmtDateAU(fmtDate(wd[6]))}`;
     }
     if (view === "day") return fmtDateAU(fmtDate(viewDate));
-    return "All Jobs";
+    return `All ${t("jobs")}`;
   };
 
   /* ═══════ RENDER ═══════ */
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
       {/* Hero */}
-      <DashboardHero title="Scheduling" subtitle="Plan, schedule, and track jobs. Link them to contacts and properties.">
+      <DashboardHero title={t("schedule")} subtitle={`Plan, schedule, and track ${t("jobs").toLowerCase()}. Link them to contacts and ${t("properties").toLowerCase()}.`}>
         <InsightChip label="Scheduled" value={stats.scheduled} />
         <InsightChip label="In Progress" value={stats.inProgress} />
         <InsightChip label="Completed" value={stats.completed} />
@@ -1236,15 +1241,15 @@ export default function SchedulingPage({
 
       {/* Metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
-        <MetricCard label="TOTAL JOBS" value={stats.total} sub="All scheduled work" colour={colours.purple} />
-        <MetricCard label="SCHEDULED" value={stats.scheduled} sub="Upcoming jobs" colour="#1E88E5" />
+        <MetricCard label={`TOTAL ${t("jobs").toUpperCase()}`} value={stats.total} sub="All scheduled work" colour={colours.purple} />
+        <MetricCard label="SCHEDULED" value={stats.scheduled} sub={`Upcoming ${t("jobs").toLowerCase()}`} colour="#1E88E5" />
         <MetricCard label="IN PROGRESS" value={stats.inProgress} sub="Currently active" colour="#E65100" />
-        <MetricCard label="COMPLETED" value={stats.completed} sub="Finished jobs" colour="#2E7D32" />
+        <MetricCard label="COMPLETED" value={stats.completed} sub={`Finished ${t("jobs").toLowerCase()}`} colour="#2E7D32" />
       </div>
 
       {/* Toolbar */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginBottom: 16 }}>
-        <button style={buttonPrimary} onClick={openNew}>+ Add Job</button>
+        <button style={buttonPrimary} onClick={openNew}>+ Add {t("job")}</button>
 
         <div style={{ display: "flex", gap: 2, background: "#F1F5F9", borderRadius: 10, padding: 3 }}>
           {VIEWS.map(v => (
@@ -1270,7 +1275,7 @@ export default function SchedulingPage({
             <option value="all">All statuses</option>
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <input style={{ ...inputStyle, width: 180 }} placeholder="Search jobs…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <input style={{ ...inputStyle, width: 180 }} placeholder={`Search ${t("jobs").toLowerCase()}…`} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         </div>
       </div>
 
@@ -1394,7 +1399,7 @@ export default function SchedulingPage({
                 <div><span style={{ color: colours.muted, fontWeight: 600 }}>📅 Date</span><br/>{fmtDateAU(detailJob.startDate)}{detailJob.endDate && detailJob.endDate !== detailJob.startDate ? ` – ${fmtDateAU(detailJob.endDate)}` : ""}</div>
                 <div><span style={{ color: colours.muted, fontWeight: 600 }}>🕐 Time</span><br/>{fmtTime(detailJob.startTime)} – {fmtTime(detailJob.endTime)}</div>
                 {detailJob.clientId && <div><span style={{ color: colours.muted, fontWeight: 600 }}>👤 Contact</span><br/>{getClientName(detailJob.clientId)}</div>}
-                {detailJob.propertyId && <div><span style={{ color: colours.muted, fontWeight: 600 }}>🏠 Property</span><br/>{getPropertyName(detailJob.propertyId)}{detailJob.subLocationId ? ` › ${getSubLocations(detailJob.propertyId).find(s => s.id === detailJob.subLocationId)?.name || ""}` : ""}</div>}
+                {detailJob.propertyId && <div><span style={{ color: colours.muted, fontWeight: 600 }}>🏠 {t("property")}</span><br/>{getPropertyName(detailJob.propertyId)}{detailJob.subLocationId ? ` › ${getSubLocations(detailJob.propertyId).find(s => s.id === detailJob.subLocationId)?.name || ""}` : ""}</div>}
                 {getJobAddress(detailJob) && (
                   <div>
                     <span style={{ color: colours.muted, fontWeight: 600 }}>📍 Address</span><br/>
@@ -1425,7 +1430,7 @@ export default function SchedulingPage({
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 28, flexWrap: "wrap" }}>
-                <button style={buttonPrimary} onClick={() => openEdit(detailJob)}>Edit Job</button>
+                <button style={buttonPrimary} onClick={() => openEdit(detailJob)}>Edit {t("job")}</button>
                 <button style={{ ...buttonSecondary, color: "#C62828" }} onClick={() => handleDelete(detailJob)}>Delete</button>
                 <button style={buttonSecondary} onClick={() => setDetailTab("costs")}>View Costs</button>
                 {detailJob.status === "Completed" && detailJob.clientId && (
@@ -1438,13 +1443,13 @@ export default function SchedulingPage({
                 )}
                 {getJobAddress(detailJob) && (
                   <button style={{ ...buttonSecondary, color: "#1565C0", borderColor: "#1565C0" }} onClick={() => openNavigation(getJobAddress(detailJob))}>
-                    📍 Navigate to Site
+                    📍 Navigate to {t("site")}
                   </button>
                 )}
                 <button style={{ ...buttonSecondary, color: "#6A1B9A", borderColor: "#6A1B9A" }} onClick={() => {
                   const w = window.open("", "_blank");
                   if (w) writeJobSheetPreviewToWindow(w, detailJob, { profile, clients, properties });
-                }}>📄 Job Sheet</button>
+                }}>📄 {t("job")} Sheet</button>
               </div>
 
               {/* ── Customer Notifications ── */}
@@ -1480,7 +1485,7 @@ export default function SchedulingPage({
                         } : null);
                       }}
                     >
-                      {notifSending === "job-completed" ? "Sending…" : "✅ Send Completion + Invoice"}
+                      {notifSending === "job-completed" ? "Sending…" : `✅ Send Completion + Invoice`}
                     </button>
                     <button
                       style={{ ...buttonSecondary, fontSize: 12, padding: "6px 14px", color: "#F57F17", borderColor: "#F57F17", opacity: notifSending ? 0.6 : 1 }}
@@ -1633,13 +1638,13 @@ export default function SchedulingPage({
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "rgba(0,0,0,0.35)", position: "absolute", inset: 0 }} onClick={closeForm} />
           <div style={{ position: "relative", background: "#fff", borderRadius: 18, padding: 32, width: 560, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800, color: colours.text, marginBottom: 20 }}>{editingJob ? "Edit Job" : "New Job"}</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: colours.text, marginBottom: 20 }}>{editingJob ? `Edit ${t("job")}` : `New ${t("job")}`}</h2>
 
             <div style={{ display: "grid", gap: 14 }}>
               {/* Title */}
               <div>
-                <label style={labelStyle}>Job Title *</label>
-                <input style={inputStyle} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Fence repair at Smith Farm" />
+                <label style={labelStyle}>{t("job")} Title *</label>
+                <input style={inputStyle} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder={`e.g. Fence repair at ${t("property").toLowerCase()}`} />
               </div>
 
               {/* Date/Time row */}
@@ -1692,7 +1697,7 @@ export default function SchedulingPage({
               {/* Property + Sub-location */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label style={labelStyle}>Link to Property</label>
+                  <label style={labelStyle}>Link to {t("property")}</label>
                   <select style={inputStyle} value={form.propertyId} onChange={e => setForm(f => ({ ...f, propertyId: e.target.value, subLocationId: "" }))}>
                     <option value="">— none —</option>
                     {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1700,7 +1705,7 @@ export default function SchedulingPage({
                 </div>
                 {form.propertyId && getSubLocations(form.propertyId).length > 0 && (
                   <div>
-                    <label style={labelStyle}>Sub-location</label>
+                    <label style={labelStyle}>{t("subLocation")}</label>
                     <select style={inputStyle} value={form.subLocationId} onChange={e => setForm(f => ({ ...f, subLocationId: e.target.value }))}>
                       <option value="">— none —</option>
                       {getSubLocations(form.propertyId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1710,7 +1715,7 @@ export default function SchedulingPage({
               </div>
               {activeWithholdingEndDate && String(form.startDate || "") <= String(activeWithholdingEndDate) && (
                 <div style={{ fontSize: 12, color: "#B91C1C", fontWeight: 700, background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 10, padding: "8px 10px" }}>
-                  Withholding warning: this paddock has an active chemical withholding period until {activeWithholdingEndDate}. Check livestock movement before scheduling.
+                  Withholding warning: this {t("paddock").toLowerCase()} has an active chemical withholding period until {activeWithholdingEndDate}. Check livestock movement before scheduling.
                 </div>
               )}
 
@@ -1727,7 +1732,7 @@ export default function SchedulingPage({
                   </select>
                   {form.recurs && form.recurs !== "Never" && (
                     <div style={{ fontSize: 11, color: colours.purple, marginTop: 4, fontWeight: 600 }}>
-                      🔄 Next job auto-created on completion
+                      🔄 Next {t("job").toLowerCase()} auto-created on completion
                       {form.clientId && <span> + invoice generated</span>}
                     </div>
                   )}
@@ -1748,7 +1753,7 @@ export default function SchedulingPage({
               {/* Description */}
               <div>
                 <label style={labelStyle}>Description</label>
-                <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Job details…" />
+                <textarea style={{ ...inputStyle, minHeight: 60 }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder={`${t("job")} details…`} />
               </div>
 
               {/* Notes */}
@@ -1761,7 +1766,7 @@ export default function SchedulingPage({
             {/* Actions */}
             <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
               <button style={buttonSecondary} onClick={closeForm}>Cancel</button>
-              <button style={buttonPrimary} onClick={handleSave}>{editingJob ? "Save Changes" : "Create Job"}</button>
+              <button style={buttonPrimary} onClick={handleSave}>{editingJob ? "Save Changes" : `Create ${t("job")}`}</button>
             </div>
           </div>
         </div>

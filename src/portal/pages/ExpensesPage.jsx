@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
+import { useTerminology } from "../TerminologyContext";
 import EntityLink from "../EntityLink";
 import { exportToCSV } from "../PortalHelpers";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +11,7 @@ import MileageSection from "./MileageSection";
 // -----------------------------------------------------------------------------
 
 export default function ExpensesPage(props) {
+  const { t } = useTerminology();
   const {
     expenses,
     expenseForm,
@@ -219,7 +221,7 @@ export default function ExpensesPage(props) {
           </div>
 
           <div>
-            <label style={labelStyle}>Link to Job (optional)</label>
+            <label style={labelStyle}>Link to {t("job")} (optional)</label>
             <select
               style={inputStyle}
               value={expenseForm.jobId || ""}
@@ -361,7 +363,7 @@ export default function ExpensesPage(props) {
             { key: "gst", label: "GST", render: (v) => currency(v) },
             { key: "expenseType", label: "Type" },
             { key: "workType", label: "Work Type" },
-            { key: "jobId", label: "Job", render: (v) => {
+            { key: "jobId", label: t("job"), render: (v) => {
               if (!v) return <span style={{ color: colours.muted }}>—</span>;
               const job = jobs.find(j => String(j.id) === String(v));
               return <EntityLink label={job ? job.title : `#${v}`} targetPage="scheduling" setActivePage={setActivePage} icon="📋" />;
@@ -530,9 +532,9 @@ export default function ExpensesPage(props) {
                 <input type="number" step="0.01" style={inputStyle} value={expenseEditorForm.amount || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, amount: e.target.value }))} />
               </div>
               <div>
-                <label style={labelStyle}>Linked Job</label>
+                <label style={labelStyle}>Linked {t("job")}</label>
                 <select style={inputStyle} value={expenseEditorForm.jobId || ""} onChange={(e) => setExpenseEditorForm((prev) => ({ ...prev, jobId: e.target.value }))}>
-                  <option value="">No linked job</option>
+                  <option value="">No linked {t("job").toLowerCase()}</option>
                   {jobs.map((job) => (
                     <option key={job.id} value={job.id}>
                       {job.title}{job.clientId ? ` (${getClientName(job.clientId)})` : ""}
