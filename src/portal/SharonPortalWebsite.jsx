@@ -75,6 +75,7 @@ import {
   getSubscriptionAccess,
   LOCKED_FEE_RATE_PERCENT,
 } from "./PortalHelpers";
+import { SyncEngine } from "./SyncEngine";
 import {
   buildQuoteHtml,
   buildQuoteEmailHtml,
@@ -131,9 +132,6 @@ export default function AccountingPortalPrototype() {
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ];
-  const PADDOCK_EVENT_QUEUE_KEY = "sas_pending_paddock_events";
-  const LIVESTOCK_QUEUE_KEY = "sas_pending_livestock_records";
-
   const getMimeTypeFromFile = (file) => {
     const explicitType = String(file?.type || "").trim().toLowerCase();
     if (explicitType) return explicitType;
@@ -275,6 +273,7 @@ export default function AccountingPortalPrototype() {
   const [realtimeStatusByKey, setRealtimeStatusByKey] = useState({});
   const realtimeChannelRef = useRef(null);
   const [profile, setProfile] = useState(initialProfile);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [clients, setClients] = useState(initialClients);
   const [invoices, setInvoices] = useState(initialInvoices);
   const [quotes, setQuotes] = useState(initialQuotes);
@@ -496,8 +495,6 @@ export default function AccountingPortalPrototype() {
       window.localStorage.removeItem("sas_incomeSources");
       window.localStorage.removeItem("sas_services");
       window.localStorage.removeItem("sas_documents");
-      window.localStorage.removeItem(PADDOCK_EVENT_QUEUE_KEY);
-      window.localStorage.removeItem(LIVESTOCK_QUEUE_KEY);
     }
   };
 
@@ -918,7 +915,12 @@ export default function AccountingPortalPrototype() {
 
   useEffect(() => {
     if (authUser) {
-      restorePortalStateFromSupabase();
+      SyncEngine.initDB(authUser.id).then(() => {
+        restorePortalStateFromSupabase();
+        if (!isOffline && supabase) {
+          SyncEngine.syncQueue(supabase);
+        }
+      });
     }
   }, [authUser]);
 
@@ -1157,66 +1159,60 @@ export default function AccountingPortalPrototype() {
     return row;
   };
 
-  const fetchCollectionFromDatabase = async (tableName, overrideUserId = null) => {
-    if (!supabase || !authUser?.id) return [];
-    const targetUserId = overrideUserId || activePortalUserId || authUser.id;
+  const fetchCollectionFromDatabase = async (tableName) => {
+    if (!authUser?.id) return [];
 
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("id, data, user_id, updated_at")
-      .eq("user_id", targetUserId)
-      .order("updated_at", { ascending: true });
+    if (!isOffline && supabase) {
+      try {
+        return await SyncEngine.pullFromServer(tableName, supabase);
+      } catch (err) {
+        console.warn(`Failed to pull ${tableName}, falling back to local:`, err);
+      }
+    }
 
-    if (error) throw error;
-
-    return Array.isArray(data)
-      ? data.map((row) => ({
-          ...((row?.data && typeof row.data === "object" && !Array.isArray(row.data)) ? row.data : {}),
-          id: row.id,
-          user_id: row.user_id,
-          updated_at: row.updated_at,
-        }))
-      : [];
+    return await SyncEngine.getLocalRecords(tableName);
   };
 
   const upsertRecordInDatabase = async (tableName, record) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
-    const row = buildSupabaseRow(record);
 
-    if (row.id) {
-      // Existing record — update by id
-      const { data, error } = await supabase
-        .from(tableName)
-        .update({ data: row.data, updated_at: row.updated_at })
-        .eq("id", row.id)
-        .eq("user_id", row.user_id)
-        .select("id, data, user_id")
-        .maybeSingle();
-      if (error) throw error;
-      if (data) return { ...(data.data || {}), id: data.id, user_id: data.user_id };
-      // If update matched nothing, fall through to insert
+    const timestamp = new Date().toISOString();
+    const prepared = {
+      ...record,
+      id: record.id || Date.now() + Math.random(),
+      updated_at: timestamp,
+      user_id: activePortalUserId
+    };
+
+    // 1. Save locally immediately
+    await SyncEngine.saveLocalRecord(tableName, prepared, true);
+
+    // 2. Queue for sync
+    await SyncEngine.queueAction(tableName, 'upsert', prepared.id, prepared);
+
+    // 3. If online, trigger sync
+    if (!isOffline && supabase) {
+      setIsSyncing(true);
+      SyncEngine.syncQueue(supabase).finally(() => setIsSyncing(false));
     }
 
-    // New record — insert without id, let DB generate it
-    const { user_id, data: rowData, updated_at } = row;
-    const { data, error } = await supabase
-      .from(tableName)
-      .insert({ user_id, data: rowData, updated_at })
-      .select("id, data, user_id")
-      .single();
-    if (error) throw error;
-    return { ...(data.data || {}), id: data.id, user_id: data.user_id };
+    return prepared;
   };
 
   const deleteRecordFromDatabase = async (tableName, id) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
-    if (!activePortalUserId) throw new Error("No active portal user selected.");
-    const { error } = await supabase
-      .from(tableName)
-      .delete()
-      .eq("id", safeNumber(id))
-      .eq("user_id", activePortalUserId);
-    if (error) throw error;
+
+    // 1. Delete locally immediately
+    await SyncEngine.deleteLocalRecord(tableName, id);
+
+    // 2. Queue for sync
+    await SyncEngine.queueAction(tableName, 'delete', id);
+
+    // 3. If online, trigger sync
+    if (!isOffline && supabase) {
+      setIsSyncing(true);
+      SyncEngine.syncQueue(supabase).finally(() => setIsSyncing(false));
+    }
   };
 
   const saveJob = async (payload, opts = {}) => {
@@ -1410,90 +1406,23 @@ export default function AccountingPortalPrototype() {
     }
   };
 
-  const readPendingPaddockEventQueue = () => {
-    if (typeof window === "undefined" || !window.localStorage) return [];
-    try {
-      const raw = window.localStorage.getItem(PADDOCK_EVENT_QUEUE_KEY);
-      const parsed = JSON.parse(raw || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const writePendingPaddockEventQueue = (items) => {
-    if (typeof window === "undefined" || !window.localStorage) return;
-    window.localStorage.setItem(PADDOCK_EVENT_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
-  };
-
-  const upsertPaddockEventInState = (items, nextItem) => {
-    const list = Array.isArray(items) ? items : [];
-    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
-    if (byId >= 0) {
-      const copy = [...list];
-      copy[byId] = nextItem;
-      return copy;
-    }
-    const byClientRef = nextItem?.clientRef
-      ? list.findIndex((row) => String(row.clientRef || "") === String(nextItem.clientRef || ""))
-      : -1;
-    if (byClientRef >= 0) {
-      const copy = [...list];
-      copy[byClientRef] = nextItem;
-      return copy;
-    }
-    return [...list, nextItem];
-  };
-
-  const flushPendingPaddockEventQueue = async () => {
-    const queue = readPendingPaddockEventQueue();
-    if (!queue.length) return;
-    const remaining = [];
-    for (const item of queue) {
-      try {
-        const toSave = { ...item };
-        if (!isValidDbId(toSave.id)) delete toSave.id;
-        const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, toSave);
-        setPaddockEvents((prev) => upsertPaddockEventInState(prev, { ...saved, pendingSync: false }));
-      } catch (err) {
-        remaining.push(item);
-        if (!(String(err?.message || "").toLowerCase().includes("network"))) {
-          console.warn("Could not sync pending paddock event:", err?.message);
-        }
-      }
-    }
-    writePendingPaddockEventQueue(remaining);
-  };
-
   const savePaddockEvent = async (payload, opts = {}) => {
-    const timestamp = new Date().toISOString();
     const clientRef = payload?.clientRef || `paddock-event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const prepared = {
       ...payload,
       clientRef,
       archived: Boolean(payload?.archived),
-      updatedAt: timestamp,
     };
     try {
       const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, prepared);
-      setPaddockEvents((prev) => upsertPaddockEventInState(prev, { ...saved, pendingSync: false }));
+      setPaddockEvents((prev) => mergeRecordById(prev, saved));
       if (!opts.silent) {
         toast.success(payload?.id ? "Paddock history updated!" : "Paddock history event logged!");
       }
-      return { ...saved, pendingSync: false };
+      return saved;
     } catch (err) {
-      const offlineFallback = {
-        ...prepared,
-        id: prepared.id || `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        pendingSync: true,
-      };
-      setPaddockEvents((prev) => upsertPaddockEventInState(prev, offlineFallback));
-      const queue = readPendingPaddockEventQueue();
-      writePendingPaddockEventQueue(upsertPaddockEventInState(queue, offlineFallback));
-      if (!opts.silent) {
-        toast.success("Saved offline. Will sync when back online.");
-      }
-      return offlineFallback;
+      console.error("Save paddock event error:", err);
+      return null;
     }
   };
 
@@ -1516,76 +1445,21 @@ export default function AccountingPortalPrototype() {
     }
   };
 
-  const readPendingLivestockQueue = () => {
-    if (typeof window === "undefined" || !window.localStorage) return [];
-    try {
-      const raw = window.localStorage.getItem(LIVESTOCK_QUEUE_KEY);
-      const parsed = JSON.parse(raw || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const writePendingLivestockQueue = (items) => {
-    if (typeof window === "undefined" || !window.localStorage) return;
-    window.localStorage.setItem(LIVESTOCK_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
-  };
-
-  const upsertLivestockInState = (items, nextItem) => {
-    const list = Array.isArray(items) ? items : [];
-    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
-    if (byId >= 0) {
-      const copy = [...list];
-      copy[byId] = nextItem;
-      return copy;
-    }
-    return [...list, nextItem];
-  };
-
-  const flushPendingLivestockQueue = async () => {
-    const queue = readPendingLivestockQueue();
-    if (!queue.length) return;
-    const remaining = [];
-    for (const item of queue) {
-      try {
-        const toSave = { ...item };
-        if (!isValidDbId(toSave.id)) delete toSave.id;
-        const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, toSave);
-        setLivestockRecords((prev) => upsertLivestockInState(prev, { ...saved, pendingSync: false }));
-      } catch (err) {
-        remaining.push(item);
-        if (!(String(err?.message || "").toLowerCase().includes("network"))) {
-          console.warn("Could not sync pending livestock record:", err?.message);
-        }
-      }
-    }
-    writePendingLivestockQueue(remaining);
-  };
-
   const saveLivestockRecord = async (payload, opts = {}) => {
     const prepared = {
       ...payload,
       archived: Boolean(payload?.archived),
-      updatedAt: new Date().toISOString(),
     };
     try {
       const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, prepared);
-      setLivestockRecords((prev) => upsertLivestockInState(prev, { ...saved, pendingSync: false }));
+      setLivestockRecords((prev) => mergeRecordById(prev, saved));
       if (!opts.silent) {
         toast.success(payload?.id ? "Livestock record updated!" : "Livestock record saved!");
       }
-      return { ...saved, pendingSync: false };
-    } catch (_err) {
-      const fallback = {
-        ...prepared,
-        id: prepared.id || `offline-livestock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        pendingSync: true,
-      };
-      setLivestockRecords((prev) => upsertLivestockInState(prev, fallback));
-      writePendingLivestockQueue(upsertLivestockInState(readPendingLivestockQueue(), fallback));
-      if (!opts.silent) toast.success("Saved offline. Will sync when back online.");
-      return fallback;
+      return saved;
+    } catch (err) {
+      console.error("Save livestock record error:", err);
+      return null;
     }
   };
 
@@ -2401,20 +2275,8 @@ export default function AccountingPortalPrototype() {
       setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(remoteSupplierPriceLists) ? remoteSupplierPriceLists : []);
       setChemicalRecords(Array.isArray(remoteChemicalRecords) ? remoteChemicalRecords : []);
-      const pendingOfflinePaddockEvents = readPendingPaddockEventQueue();
-      const hydratedPaddockEvents = Array.isArray(remotePaddockEvents) ? remotePaddockEvents : [];
-      const mergedPaddockEvents = pendingOfflinePaddockEvents.reduce(
-        (acc, item) => upsertPaddockEventInState(acc, item),
-        hydratedPaddockEvents
-      );
-      setPaddockEvents(mergedPaddockEvents);
-      const pendingOfflineLivestock = readPendingLivestockQueue();
-      const hydratedLivestock = Array.isArray(remoteLivestockRecords) ? remoteLivestockRecords : [];
-      const mergedLivestock = pendingOfflineLivestock.reduce(
-        (acc, item) => upsertLivestockInState(acc, item),
-        hydratedLivestock
-      );
-      setLivestockRecords(mergedLivestock);
+      setPaddockEvents(Array.isArray(remotePaddockEvents) ? remotePaddockEvents : []);
+      setLivestockRecords(Array.isArray(remoteLivestockRecords) ? remoteLivestockRecords : []);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2458,8 +2320,7 @@ export default function AccountingPortalPrototype() {
       setShowBackOnline(true);
       // Auto-resync data when coming back online
       if (authUser && hasHydratedSupabaseState.current) {
-        flushPendingPaddockEventQueue();
-        flushPendingLivestockQueue();
+        SyncEngine.syncQueue(supabase);
         restorePortalStateFromSupabase();
       }
       setTimeout(() => setShowBackOnline(false), 4000);
@@ -5333,20 +5194,24 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             <div className="sas-page-inner sas-page-panel" style={{ maxWidth: 1480, margin: "0 auto" }}>
             {(() => {
               const activeSync = realtimeStatusByKey[activePage];
-              const syncLabel = isOffline
-                ? "Offline"
-                : isSupabaseRestoring
-                  ? "Syncing"
+              const syncLabel = isSyncing
+                ? "Syncing changes..."
+                : isOffline
+                  ? "Offline"
+                  : isSupabaseRestoring
+                    ? "Syncing"
+                    : realtimePulse === activePage
+                      ? "Live update received"
+                      : activeSync?.updatedAt
+                        ? `Last synced ${new Date(activeSync.updatedAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`
+                        : "Live sync ready";
+              const syncTone = (isSyncing || isSupabaseRestoring)
+                ? { bg: "#EFF6FF", border: "#BFDBFE", color: "#1E40AF" }
+                : isOffline
+                  ? { bg: "#FEF2F2", border: "#FECACA", color: "#991B1B" }
                   : realtimePulse === activePage
-                    ? "Live update received"
-                    : activeSync?.updatedAt
-                      ? `Last synced ${new Date(activeSync.updatedAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`
-                      : "Live sync ready";
-              const syncTone = isOffline
-                ? { bg: "#FEF2F2", border: "#FECACA", color: "#991B1B" }
-                : realtimePulse === activePage
-                  ? { bg: "#ECFDF5", border: "#A7F3D0", color: "#065F46" }
-                  : { bg: "#F8FAFC", border: colours.border, color: colours.muted };
+                    ? { bg: "#ECFDF5", border: "#A7F3D0", color: "#065F46" }
+                    : { bg: "#F8FAFC", border: colours.border, color: colours.muted };
               return (
                 <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 999, border: `1px solid ${syncTone.border}`, background: syncTone.bg, color: syncTone.color, fontSize: 12, fontWeight: 700 }}>
