@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useTerminology } from "../TerminologyContext";
 import EntityLink from "../EntityLink";
 import { exportToCSV } from "../PortalHelpers";
 import { computeJobFinancials } from "./JobCostingPanel";
@@ -29,6 +30,7 @@ class InvoicesErrorBoundary extends React.Component {
 // -----------------------------------------------------------------------------
 
 function InvoicesPageInner(props) {
+  const { t } = useTerminology();
   const {
     profile,
     clients,
@@ -164,7 +166,7 @@ function InvoicesPageInner(props) {
     })();
     return (
       <div style={{ display: "grid", gap: 20 }}>
-        <DashboardHero title="Invoices" subtitle="Create, send and track all your invoices. Live totals update as you add records." highlight={currency(totalPaid)}>
+        <DashboardHero title="Invoices" subtitle={`Create, send and track all your invoices. Live totals update as you add records.`} highlight={currency(totalPaid)}>
           <InsightChip label="Outstanding" value={currency(totalOutstanding)} />
           <InsightChip label="Overdue" value={`${overdueInvoices.length} invoice${overdueInvoices.length === 1 ? "" : "s"}`} />
           <InsightChip label="Draft" value={`${draftCount}`} />
@@ -285,7 +287,7 @@ function InvoicesPageInner(props) {
         <SectionCard title="Create Invoice">
           {/* -- Wizard progress bar -- */}
           <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
-            {["Client", "Details", "Line Items", "Review & Save"].map((label, i) => {
+            {[t("customer"), "Details", "Line Items", "Review & Save"].map((label, i) => {
               const step = i + 1;
               const active = invoiceWizardStep === step;
               const done = invoiceWizardStep > step;
@@ -310,10 +312,10 @@ function InvoicesPageInner(props) {
           {invoiceWizardStep === 1 && (
             <div style={{ display: "grid", gap: 20 }}>
               <div>
-                <label style={labelStyle}>Search or Select Client</label>
+                <label style={labelStyle}>Search or Select {t("customer")}</label>
                 <input style={{ ...inputStyle, fontSize: 15 }} value={invClientSearch}
                   onChange={(e) => { setInvClientSearch(e.target.value); if (!e.target.value) setInvoiceForm((p) => ({ ...p, clientId: "" })); }}
-                  placeholder="Type client name..." />
+                  placeholder={`Type ${t("customer").toLowerCase()} name...`} />
                 {invClientSearch && (
                   <div style={{ border: `1px solid ${colours.border}`, borderRadius: 10, marginTop: 4, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
                     {matchingClients
@@ -324,7 +326,7 @@ function InvoicesPageInner(props) {
                         </div>
                       ))}
                     {matchingClients.length === 0 && (
-                      <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new client below</div>
+                      <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new {t("customer").toLowerCase()} below</div>
                     )}
                   </div>
                 )}
@@ -344,7 +346,7 @@ function InvoicesPageInner(props) {
                 return c ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
                     <div style={{ ...cardStyle, padding: 16, background: colours.lightPurple }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 8 }}>Client Details</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 8 }}>{t("customer")} Details</div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: colours.text }}>{c.name}</div>
                       {c.businessName && <div style={{ fontSize: 13, color: colours.muted, marginTop: 4 }}>{c.businessName}</div>}
                       {c.abn && <div style={{ fontSize: 13, color: colours.muted, marginTop: 2 }}>ABN: {c.abn}</div>}
@@ -367,7 +369,7 @@ function InvoicesPageInner(props) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button style={{ ...buttonSecondary, fontSize: 13 }} onClick={() => { setClientModalForm({ name: "", businessName: "", email: "", phone: "", address: "", abn: "", defaultCurrency: "AUD $", workType: "" }); setEditingClientId(null); setShowClientModal(true); }}>
-                    + New Client
+                    + New {t("customer")}
                   </button>
                   <button style={{ ...buttonSecondary, fontSize: 13 }} onClick={() => { setImportType("clients"); setImportRows([]); setImportError(""); setShowImportModal(true); }}>
                     Upload Import
@@ -414,7 +416,7 @@ function InvoicesPageInner(props) {
               </div>
               {/* Link to Job */}
               <div>
-                <label style={labelStyle}>Link to Job (optional)</label>
+                <label style={labelStyle}>Link to {t("job")} (optional)</label>
                 <select style={inputStyle} value={invoiceForm.jobId || ""} onChange={e => setInvoiceForm(prev => ({ ...prev, jobId: e.target.value }))}>
                   <option value="">— none —</option>
                   {jobs.map(j => <option key={j.id} value={j.id}>{j.title}{j.clientId ? ` (${getClientName(j.clientId)})` : ""}</option>)}
@@ -430,10 +432,10 @@ function InvoicesPageInner(props) {
                 const marginPct = invoiceAmt > 0 ? (margin / invoiceAmt) * 100 : 0;
                 return (
                   <div style={{ ...cardStyle, padding: 14, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#92400E", textTransform: "uppercase", marginBottom: 8 }}>🔒 Private Margin Summary (not visible to client)</div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#92400E", textTransform: "uppercase", marginBottom: 8 }}>🔒 Private Margin Summary (not visible to {t("customer").toLowerCase()})</div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
                       <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: "#92400E" }}>Invoice</div><div style={{ fontSize: 16, fontWeight: 800 }}>{currency(invoiceAmt)}</div></div>
-                      <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: "#92400E" }}>Job Cost</div><div style={{ fontSize: 16, fontWeight: 800 }}>{currency(fin.totalCost)}</div></div>
+                      <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: "#92400E" }}>{t("job")} Cost</div><div style={{ fontSize: 16, fontWeight: 800 }}>{currency(fin.totalCost)}</div></div>
                       <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: "#92400E" }}>Margin</div><div style={{ fontSize: 16, fontWeight: 800, color: margin >= 0 ? "#2E7D32" : "#C62828" }}>{currency(margin)} ({marginPct.toFixed(0)}%)</div></div>
                     </div>
                   </div>
@@ -648,11 +650,11 @@ function InvoicesPageInner(props) {
             emptyState={{ icon: "", title: "No invoices yet", message: "Create your first invoice using the form above. Invoices can be emailed as a PDF with a Stripe payment link." }}
             columns={[
               { key: "invoiceNumber", label: "Invoice", render: (v, row) => <span>{v}{row.recurs && row.recurs !== "Never" ? <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: colours.purple, background: colours.lightPurple, padding: "2px 7px", borderRadius: 6 }}> {row.recurs}</span> : null}</span> },
-              { key: "clientId", label: "Client", render: (_, row) => <EntityLink label={getClientName(row.clientId)} targetPage="clients" setActivePage={setActivePage} /> },
+              { key: "clientId", label: t("customer"), render: (_, row) => <EntityLink label={getClientName(row.clientId)} targetPage="clients" setActivePage={setActivePage} /> },
               { key: "invoiceDate", label: "Date", render: (v) => formatDateAU(v) },
               { key: "dueDate", label: "Due", render: (v) => formatDateAU(v) },
               { key: "total", label: "Total", render: (v, row) => formatCurrencyByCode(v, row.currencyCode || getClientCurrencyCode(getClientById(row.clientId))) },
-              { key: "jobId", label: "Job", render: (v) => {
+              { key: "jobId", label: t("job"), render: (v) => {
                 if (!v) return <span style={{ color: colours.muted }}>—</span>;
                 const job = jobs.find(j => String(j.id) === String(v));
                 return <EntityLink label={job ? job.title : `#${v}`} targetPage="scheduling" setActivePage={setActivePage} icon="📋" />;
@@ -824,7 +826,7 @@ function InvoicesPageInner(props) {
                         }}
                       >
                         <div>
-                          <label style={labelStyle}>Client</label>
+                          <label style={labelStyle}>{t("customer")}</label>
                           <select
                             style={inputStyle}
                             value={invoiceEditorForm.clientId}
@@ -885,11 +887,11 @@ function InvoicesPageInner(props) {
                         </div>
 
                         <div style={{ gridColumn: "1 / -1" }}>
-                          <label style={labelStyle}>Linked Job</label>
+                          <label style={labelStyle}>Linked {t("job")}</label>
                           <div style={{ display: "grid", gap: 10 }}>
                             <input
                               style={inputStyle}
-                              placeholder="Search jobs by title or client"
+                              placeholder={`Search ${t("jobs").toLowerCase()} by title or ${t("customer").toLowerCase()}`}
                               value={invoiceEditorForm.jobSearch || ""}
                               onChange={(e) => setInvoiceEditorForm((prev) => ({ ...prev, jobSearch: e.target.value }))}
                             />
@@ -898,7 +900,7 @@ function InvoicesPageInner(props) {
                               value={invoiceEditorForm.jobId || ""}
                               onChange={(e) => setInvoiceEditorForm((prev) => ({ ...prev, jobId: e.target.value }))}
                             >
-                              <option value="">No linked job</option>
+                              <option value="">No linked {t("job").toLowerCase()}</option>
                               {jobs
                                 .filter((job) => {
                                   const search = String(invoiceEditorForm.jobSearch || "").trim().toLowerCase();

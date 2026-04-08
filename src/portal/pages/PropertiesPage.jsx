@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useTerminology } from "../TerminologyContext";
 
 // ---------------------------------------------------------------------------
 // PROPERTY TYPES
@@ -53,6 +54,7 @@ const sortByDateDesc = (rows = []) => [...rows].sort((a, b) => {
 // SUB-LOCATION EDITOR (inline)
 // ---------------------------------------------------------------------------
 function SubLocationEditor({ subLocations = [], onChange, inputStyle, labelStyle, buttonPrimary, buttonSecondary, colours }) {
+  const { t } = useTerminology();
   const add = () => onChange([...subLocations, normaliseSubLocation({ id: Date.now(), name: "", description: "" })]);
   const update = (id, field, value) => onChange(subLocations.map((s) => (s.id === id ? normaliseSubLocation({ ...s, [field]: value }) : s)));
   const remove = (id) => onChange(subLocations.filter((s) => s.id !== id));
@@ -60,12 +62,12 @@ function SubLocationEditor({ subLocations = [], onChange, inputStyle, labelStyle
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <label style={{ ...labelStyle, margin: 0, fontWeight: 800, fontSize: 13 }}>Sub-Locations</label>
-        <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 14px" }} onClick={add}>+ Add Sub-Location</button>
+        <label style={{ ...labelStyle, margin: 0, fontWeight: 800, fontSize: 13 }}>{t("subLocations")}</label>
+        <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 14px" }} onClick={add}>+ Add {t("subLocation")}</button>
       </div>
       {subLocations.length === 0 && (
         <div style={{ fontSize: 13, color: colours.muted, padding: "10px 0" }}>
-          No sub-locations yet. Add areas like paddocks, sheds, rooms, or zones.
+          No {t("subLocations").toLowerCase()} yet. Add areas like {t("paddocks").toLowerCase()}, sheds, rooms, or zones.
         </div>
       )}
       <div style={{ display: "grid", gap: 10 }}>
@@ -88,11 +90,11 @@ function SubLocationEditor({ subLocations = [], onChange, inputStyle, labelStyle
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <label style={{ ...labelStyle, margin: 0, fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}>
                   <input type="checkbox" checked={Boolean(s.isPaddock)} onChange={(e) => update(s.id, "isPaddock", e.target.checked)} />
-                  Tag as paddock
+                  Tag as {t("paddock").toLowerCase()}
                 </label>
                 {s.isPaddock && (
                   <span style={{ fontSize: 11, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 999, padding: "2px 10px" }}>
-                    Paddock record enabled
+                    {t("paddock")} record enabled
                   </span>
                 )}
               </div>
@@ -141,12 +143,13 @@ function SubLocationEditor({ subLocations = [], onChange, inputStyle, labelStyle
 // PROPERTY FORM
 // ---------------------------------------------------------------------------
 function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, cardStyle, buttonPrimary, buttonSecondary, colours, onSave, onCancel, isEditing }) {
+  const { t } = useTerminology();
   return (
     <div style={{ display: "grid", gap: 16 }}>
       {/* Core fields */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
         <div>
-          <label style={labelStyle}>Property name *</label>
+          <label style={labelStyle}>{t("property")} name *</label>
           <input style={inputStyle} value={form.name || ""} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Smith Farm, 42 Main St" />
         </div>
         <div>
@@ -157,10 +160,10 @@ function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, car
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Property type</label>
+          <label style={labelStyle}>{t("property")} type</label>
           <select style={inputStyle} value={form.propertyType || ""} onChange={e => setForm(p => ({ ...p, propertyType: e.target.value }))}>
             <option value="">Select…</option>
-            {PROPERTY_TYPES.map(t => <option key={t}>{t}</option>)}
+            {PROPERTY_TYPES.map(type => <option key={type}>{type}</option>)}
           </select>
         </div>
       </div>
@@ -200,7 +203,7 @@ function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, car
 
       <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
         <button style={buttonSecondary} onClick={onCancel}>Cancel</button>
-        <button style={buttonPrimary} onClick={onSave}>{isEditing ? "Save Changes" : "Save Property"}</button>
+        <button style={buttonPrimary} onClick={onSave}>{isEditing ? "Save Changes" : `Save ${t("property")}`}</button>
       </div>
     </div>
   );
@@ -210,6 +213,7 @@ function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, car
 // PROPERTY DETAIL VIEW
 // ---------------------------------------------------------------------------
 function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemicalRecords = [], paddockEvents = [], savePaddockEvent, archivePaddockEvent, colours, cardStyle, buttonPrimary, buttonSecondary, inputStyle, labelStyle, setActivePage, formatDateAU = (v) => v || "" }) {
+  const { t } = useTerminology();
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showRainModal, setShowRainModal] = useState(false);
   const [showPastureModal, setShowPastureModal] = useState(false);
@@ -369,7 +373,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
     const rows = timeline.map((item) => `<tr><td>${item.date || ""}</td><td>${item.title || ""}</td><td>${item.notes || ""}</td></tr>`).join("");
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:8px;font-size:12px}</style></head><body><h1>Paddock History Report</h1><p><strong>Property:</strong> ${property.name || ""}</p><p><strong>Paddock:</strong> ${paddock.name || ""}</p><table><thead><tr><th>Date</th><th>Activity</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:8px;font-size:12px}</style></head><body><h1>${t("paddock")} History Report</h1><p><strong>${t("property")}:</strong> ${property.name || ""}</p><p><strong>${t("paddock")}:</strong> ${paddock.name || ""}</p><table><thead><tr><th>Date</th><th>Activity</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
     w.document.close();
     w.focus();
     w.print();
@@ -378,9 +382,9 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ ...cardStyle, padding: 14, background: "#EFF6FF", border: "1px solid #BFDBFE" }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>Paddock Record</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#1E3A8A", marginBottom: 6 }}>{t("paddock")} Record</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
-          <div><strong>Name:</strong> {paddock.name || "Unnamed paddock"}</div>
+          <div><strong>Name:</strong> {paddock.name || `Unnamed ${t("paddock").toLowerCase()}`}</div>
           <div><strong>Size:</strong> {paddock.sizeHectares ? `${paddock.sizeHectares} ha` : "Not set"}</div>
           <div><strong>Pasture:</strong> {paddock.pastureType || "Not set"}</div>
           <div><strong>Water source:</strong> {paddock.waterSource || "Not set"}</div>
@@ -402,9 +406,9 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button style={buttonPrimary} onClick={() => setShowMoveModal(true)}>Move Mob</button>
         <button style={buttonSecondary} onClick={() => setShowRainModal(true)}>Log Rainfall</button>
-        <button style={buttonSecondary} onClick={() => setShowPastureModal(true)}>Log Pasture Assessment</button>
+        <button style={buttonSecondary} onClick={() => setShowPastureModal(true)}>Log {t("paddock")} Assessment</button>
         <button style={buttonSecondary} onClick={() => setShowSpellingModal(true)}>Log Spelling Period</button>
-        <button style={buttonSecondary} onClick={exportTimelinePdf}>Export Paddock History PDF</button>
+        <button style={buttonSecondary} onClick={exportTimelinePdf}>Export {t("paddock")} History PDF</button>
       </div>
 
       <div style={{ ...cardStyle, padding: 14, border: `1px solid ${colours.border}` }}>
@@ -424,17 +428,17 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
       </div>
 
       <div style={{ ...cardStyle, padding: 14, border: `1px solid ${colours.border}` }}>
-        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>Paddock History Timeline ({timeline.length})</div>
-        {timeline.length === 0 ? <div style={{ color: colours.muted, fontSize: 13 }}>No paddock history yet.</div> : (
+        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>{t("paddock")} History Timeline ({timeline.length})</div>
+        {timeline.length === 0 ? <div style={{ color: colours.muted, fontSize: 13 }}>No {t("paddock").toLowerCase()} history yet.</div> : (
           <div style={{ display: "grid", gap: 8 }}>
             {timeline.map((item) => (
               <div key={item.key} style={{ border: `1px solid ${colours.border}`, borderRadius: 10, padding: 10, background: "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><div style={{ fontWeight: 700 }}>{item.title}</div><div style={{ fontSize: 12, color: colours.muted }}>{formatDateAU(item.date)}</div></div>
                 {item.notes && <div style={{ fontSize: 12, color: colours.muted, marginTop: 4 }}>{item.notes}</div>}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: 11, color: colours.muted }}>Source: {item.source === "jobs" ? "Scheduling" : item.source === "chemicalRecords" ? "Chemical Records" : "Paddock Journal"}</div>
+                  <div style={{ fontSize: 11, color: colours.muted }}>Source: {item.source === "jobs" ? t("schedule") : item.source === "chemicalRecords" ? "Chemical Records" : `${t("paddock")} Journal`}</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {item.source === "jobs" && <button style={buttonSecondary} onClick={() => setActivePage("scheduling")}>Open job</button>}
+                    {item.source === "jobs" && <button style={buttonSecondary} onClick={() => setActivePage("scheduling")}>Open {t("job").toLowerCase()}</button>}
                     {item.source === "chemicalRecords" && <button style={buttonSecondary} onClick={() => setActivePage("chemical records")}>Open chemical record</button>}
                     {item.source === "paddockEvents" && <button style={{ ...buttonSecondary, color: "#B91C1C" }} onClick={() => archivePaddockEvent(item.raw.id)}>Archive</button>}
                   </div>
@@ -455,7 +459,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
                   <div><label style={labelStyle}>Date</label><input type="date" style={inputStyle} value={moveForm.date} onChange={(e) => setMoveForm((p) => ({ ...p, date: e.target.value }))} /></div>
                   <div><label style={labelStyle}>Mob name</label><input style={inputStyle} value={moveForm.mobName} onChange={(e) => setMoveForm((p) => ({ ...p, mobName: e.target.value }))} /></div>
                   <div><label style={labelStyle}>Number of head</label><input type="number" min="1" style={inputStyle} value={moveForm.headCount} onChange={(e) => setMoveForm((p) => ({ ...p, headCount: e.target.value }))} /></div>
-                  <div><label style={labelStyle}>Destination paddock</label><select style={inputStyle} value={moveForm.destination} onChange={(e) => setMoveForm((p) => ({ ...p, destination: e.target.value }))}><option value="">Select destination</option>{destinationOptions.map((opt) => <option key={opt.key} value={opt.key}>{opt.property.name} - {opt.sub.name}</option>)}</select></div>
+                  <div><label style={labelStyle}>Destination {t("paddock").toLowerCase()}</label><select style={inputStyle} value={moveForm.destination} onChange={(e) => setMoveForm((p) => ({ ...p, destination: e.target.value }))}><option value="">Select destination</option>{destinationOptions.map((opt) => <option key={opt.key} value={opt.key}>{opt.property.name} - {opt.sub.name}</option>)}</select></div>
                 </div>
                 {destinationWithholdingWarning && <div style={{ fontSize: 12, color: "#B45309", background: "#FFEDD5", border: "1px solid #FDBA74", borderRadius: 8, padding: 8 }}>{destinationWithholdingWarning}</div>}
                 {destinationRecentGrazeWarning && <div style={{ fontSize: 12, color: "#92400E", background: "#FEF3C7", border: "1px solid #FCD34D", borderRadius: 8, padding: 8 }}>{destinationRecentGrazeWarning}</div>}
@@ -475,7 +479,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
             )}
             {showPastureModal && (
               <div style={{ display: "grid", gap: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 18 }}>Pasture Assessment</h4>
+                <h4 style={{ margin: 0, fontSize: 18 }}>{t("paddock")} Assessment</h4>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
                   <div><label style={labelStyle}>Date</label><input type="date" style={inputStyle} value={pastureForm.date} onChange={(e) => setPastureForm((p) => ({ ...p, date: e.target.value }))} /></div>
                   <div><label style={labelStyle}>Condition (1-5)</label><input type="number" min="1" max="5" style={inputStyle} value={pastureForm.score} onChange={(e) => setPastureForm((p) => ({ ...p, score: e.target.value }))} /></div>
@@ -503,6 +507,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
 }
 
 function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary, buttonPrimary, inputStyle, labelStyle, setActivePage, jobs = [], chemicalRecords = [], paddockEvents = [], savePaddockEvent, archivePaddockEvent, allProperties = [], formatDateAU = (v) => v || "" }) {
+  const { t } = useTerminology();
   const client = clients.find(c => String(c.id) === String(property.clientId));
   const subs = (property.subLocations || []).map(normaliseSubLocation);
   const hasCoords = property.gpsLat && property.gpsLng;
@@ -520,7 +525,7 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
         </div>
         {client && (
           <div style={{ ...cardStyle, padding: "10px 16px", background: colours.lightTeal || "#F0FDFA" }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: colours.teal }}>Linked Contact</div>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: colours.teal }}>Linked contact</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: colours.text }}>{client.name}</div>
           </div>
         )}
@@ -528,7 +533,7 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
 
       {hasCoords && (
         <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${colours.border}` }}>
-          <iframe title="Property location" width="100%" height="300" style={{ border: 0 }} loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(property.gpsLng) - 0.01}%2C${Number(property.gpsLat) - 0.01}%2C${Number(property.gpsLng) + 0.01}%2C${Number(property.gpsLat) + 0.01}&layer=mapnik&marker=${property.gpsLat}%2C${property.gpsLng}`} />
+          <iframe title={`${t("property")} location`} width="100%" height="300" style={{ border: 0 }} loading="lazy" src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(property.gpsLng) - 0.01}%2C${Number(property.gpsLat) - 0.01}%2C${Number(property.gpsLng) + 0.01}%2C${Number(property.gpsLat) + 0.01}&layer=mapnik&marker=${property.gpsLat}%2C${property.gpsLng}`} />
         </div>
       )}
 
@@ -540,7 +545,7 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
       )}
 
       <div style={{ ...cardStyle, padding: 14, border: `1px solid ${colours.border}` }}>
-        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>Sub-Locations ({subs.length})</div>
+        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>{t("subLocations")} ({subs.length})</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           {subs.map((s) => (
             <div key={s.id} style={{ ...cardStyle, padding: 12, background: "#fff", border: `1px solid ${colours.border}` }}>
@@ -549,9 +554,9 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
                   <div style={{ fontWeight: 700 }}>{s.name || "Unnamed"}</div>
                   {s.description && <div style={{ fontSize: 12, color: colours.muted, marginTop: 4 }}>{s.description}</div>}
                 </div>
-                {isPaddockSubLocation(s) && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#DCFCE7", color: "#166534" }}>Paddock</span>}
+                {isPaddockSubLocation(s) && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#DCFCE7", color: "#166534" }}>{t("paddock")}</span>}
               </div>
-              {isPaddockSubLocation(s) && <button style={{ ...buttonSecondary, marginTop: 10 }} onClick={() => setSelectedPaddockId(String(s.id))}>Open paddock history</button>}
+              {isPaddockSubLocation(s) && <button style={{ ...buttonSecondary, marginTop: 10 }} onClick={() => setSelectedPaddockId(String(s.id))}>Open {t("paddock").toLowerCase()} history</button>}
             </div>
           ))}
         </div>
@@ -584,14 +589,15 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
 // MAP VIEW (OpenStreetMap embeds for all properties with coords)
 // ---------------------------------------------------------------------------
 function MapView({ properties, colours, cardStyle, onSelect, jobs = [] }) {
+  const { t } = useTerminology();
   const withCoords = properties.filter(p => p.gpsLat && p.gpsLng);
 
   if (withCoords.length === 0) {
     return (
       <div style={{ padding: 30, textAlign: "center", color: colours.muted }}>
         <div style={{ fontSize: 36, marginBottom: 12 }}>🗺️</div>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>No properties with GPS coordinates</div>
-        <div style={{ fontSize: 13, marginTop: 6 }}>Add latitude and longitude to your properties to see them on the map.</div>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>No {t("properties").toLowerCase()} with GPS coordinates</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>Add latitude and longitude to your {t("properties").toLowerCase()} to see them on the map.</div>
       </div>
     );
   }
@@ -610,7 +616,7 @@ function MapView({ properties, colours, cardStyle, onSelect, jobs = [] }) {
       {/* Overview map */}
       <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${colours.border}` }}>
         <iframe
-          title="All properties"
+          title={`All ${t("properties").toLowerCase()}`}
           width="100%"
           height="400"
           style={{ border: 0 }}
@@ -642,9 +648,9 @@ function MapView({ properties, colours, cardStyle, onSelect, jobs = [] }) {
               )}
             </div>
             <div style={{ fontSize: 11, color: colours.muted, marginTop: 6 }}>
-              {(p.subLocations || []).length} sub-location{(p.subLocations || []).length !== 1 ? "s" : ""}
+              {(p.subLocations || []).length} {t("subLocation").toLowerCase()}{(p.subLocations || []).length !== 1 ? "s" : ""}
               <span style={{ margin: "0 6px" }}>•</span>
-              {(() => { const cnt = (jobs || []).filter(j => String(j.propertyId) === String(p.id) || String(j.siteId) === String(p.id)).length; return cnt > 0 ? <span style={{ color: colours.teal, fontWeight: 700 }}>{cnt} active job{cnt !== 1 ? "s" : ""}</span> : <span>No active jobs</span>; })()}
+              {(() => { const cnt = (jobs || []).filter(j => String(j.propertyId) === String(p.id) || String(j.siteId) === String(p.id)).length; return cnt > 0 ? <span style={{ color: colours.teal, fontWeight: 700 }}>{cnt} active {t("job").toLowerCase()}{cnt !== 1 ? "s" : ""}</span> : <span>No active {t("jobs").toLowerCase()}</span>; })()}
               <span style={{ margin: "0 6px" }}>•</span>
               <a
                 href={`https://www.google.com/maps/dir/?api=1&destination=${p.gpsLat},${p.gpsLng}`}
@@ -664,6 +670,7 @@ function MapView({ properties, colours, cardStyle, onSelect, jobs = [] }) {
 // MAIN PROPERTIES PAGE
 // ---------------------------------------------------------------------------
 export default function PropertiesPage(props) {
+  const { t } = useTerminology();
   const {
     properties = [],
     clients = [],
@@ -785,7 +792,7 @@ export default function PropertiesPage(props) {
           <button style={buttonSecondary} onClick={() => setView("list")}>← Back to list</button>
           <button style={buttonSecondary} onClick={() => handleEdit(selectedProperty)}>Edit</button>
         </div>
-        <SectionCard title="Property Details">
+        <SectionCard title={`${t("property")} Details`}>
           <PropertyDetail
             property={selectedProperty}
             clients={clients}
@@ -812,7 +819,7 @@ export default function PropertiesPage(props) {
     return (
       <div style={{ display: "grid", gap: 20 }}>
         <button style={{ ...buttonSecondary, justifySelf: "start" }} onClick={() => { setForm({ ...blankForm }); setView("list"); }}>← Back to list</button>
-        <SectionCard title={view === "edit" ? "Edit Property" : "Add New Property"}>
+        <SectionCard title={view === "edit" ? `Edit ${t("property")}` : `Add New ${t("property")}`}>
           <PropertyForm
             form={form} setForm={setForm}
             clients={clients}
@@ -835,7 +842,7 @@ export default function PropertiesPage(props) {
           <button style={buttonSecondary} onClick={() => setView("list")}>← List View</button>
           <button style={{ ...buttonPrimary, opacity: 1 }}>🗺️ Map View</button>
         </div>
-        <SectionCard title="Properties Map">
+        <SectionCard title={`${t("properties")} Map`}>
           <MapView
             properties={properties}
             colours={colours} cardStyle={cardStyle}
@@ -851,39 +858,39 @@ export default function PropertiesPage(props) {
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <DashboardHero
-        title="Properties"
-        subtitle="Manage your properties, sites, and sub-locations. Link them to contacts and track work history."
+        title={t("properties")}
+        subtitle={`Manage your ${t("properties").toLowerCase()}, ${t("sites").toLowerCase()}, and ${t("subLocations").toLowerCase()}. Link them to contacts and track work history.`}
         highlight={String(properties.length)}
       >
-        <InsightChip label="Sub-locations" value={String(totalSubs)} />
+        <InsightChip label={t("subLocations")} value={String(totalSubs)} />
         <InsightChip label="Map pins" value={String(withCoords)} />
       </DashboardHero>
 
       {/* Metrics */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        <MetricCard title="Total properties" value={String(properties.length)} subtitle="All sites and locations" accent={colours.purple} />
-        <MetricCard title="Sub-locations" value={String(totalSubs)} subtitle="Areas, paddocks, rooms, zones" accent={colours.teal} />
-        <MetricCard title="With GPS" value={String(withCoords)} subtitle="Properties with map coordinates" accent={colours.purple} />
-        {PROPERTY_TYPES.map(t => (
-          <MetricCard key={t} title={t} value={String(typeCounts[t] || 0)} subtitle={`${t} properties`} accent={colours.teal} />
+        <MetricCard title={`Total ${t("properties").toLowerCase()}`} value={String(properties.length)} subtitle={`All ${t("sites").toLowerCase()} and locations`} accent={colours.purple} />
+        <MetricCard title={t("subLocations")} value={String(totalSubs)} subtitle="Areas, paddocks, rooms, zones" accent={colours.teal} />
+        <MetricCard title="With GPS" value={String(withCoords)} subtitle={`${t("properties")} with map coordinates`} accent={colours.purple} />
+        {PROPERTY_TYPES.map(type => (
+          <MetricCard key={type} title={type} value={String(typeCounts[type] || 0)} subtitle={`${type} ${t("properties").toLowerCase()}`} accent={colours.teal} />
         ))}
       </div>
 
       {/* Action bar */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 8 }}>
-          <button style={{ ...buttonPrimary }} onClick={() => setView("add")}>+ Add Property</button>
+          <button style={{ ...buttonPrimary }} onClick={() => setView("add")}>+ Add {t("property")}</button>
           <button style={buttonSecondary} onClick={() => setView("map")}>🗺️ Map View</button>
         </div>
       </div>
 
       {/* Property list */}
-      <SectionCard title="Property List">
+      <SectionCard title={`${t("property")} List`}>
         {/* Search + filter */}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <input
             style={{ ...inputStyle, flex: 1, minWidth: 200 }}
-            placeholder="Search properties, addresses, sub-locations…"
+            placeholder={`Search ${t("properties").toLowerCase()}, addresses, ${t("subLocations").toLowerCase()}…`}
             value={search} onChange={e => setSearch(e.target.value)}
           />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -902,9 +909,9 @@ export default function PropertiesPage(props) {
         </div>
 
         <DataTable
-          emptyState={{ icon: "🏠", title: "No properties yet", message: "Add your first property to start tracking sites and locations." }}
+          emptyState={{ icon: "🏠", title: `No ${t("properties").toLowerCase()} yet`, message: `Add your first ${t("property").toLowerCase()} to start tracking ${t("sites").toLowerCase()} and locations.` }}
           columns={[
-            { key: "name", label: "Property", render: (v, row) => (
+            { key: "name", label: t("property"), render: (v, row) => (
               <div>
                 <div style={{ fontWeight: 700 }}>{row.name}</div>
                 {row.address && <div style={{ fontSize: 12, color: colours.muted }}>{row.address}</div>}
@@ -913,10 +920,10 @@ export default function PropertiesPage(props) {
             { key: "propertyType", label: "Type", render: (v) => v ? (
               <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 999, background: colours.lightPurple || "#F3E8FF", color: colours.purple }}>{v}</span>
             ) : "—" },
-            { key: "subLocations", label: "Sub-Locations", render: (v, row) => {
+            { key: "subLocations", label: t("subLocations"), render: (v, row) => {
               const subs = row.subLocations || [];
               if (!subs.length) return <span style={{ color: colours.muted }}>—</span>;
-              return <span style={{ fontSize: 12 }}>{subs.map(s => s.name).filter(Boolean).join(", ") || `${subs.length} area${subs.length > 1 ? "s" : ""}`}</span>;
+              return <span style={{ fontSize: 12 }}>{subs.map(s => s.name).filter(Boolean).join(", ") || `${subs.length} ${t("subLocation").toLowerCase()}${subs.length > 1 ? "s" : ""}`}</span>;
             }},
             { key: "clientId", label: "Contact", render: (v, row) => {
               const c = clients.find(cl => String(cl.id) === String(row.clientId));
@@ -933,7 +940,7 @@ export default function PropertiesPage(props) {
               const count = livestockWarningsByProperty[String(row.id)] || 0;
               return count > 0
                 ? <span style={{ fontSize: 11, fontWeight: 700, color: "#B91C1C", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 999, padding: "2px 8px" }}>{count} livestock conflict{count !== 1 ? "s" : ""}</span>
-                : <span style={{ color: colours.muted }}>â€”</span>;
+                : <span style={{ color: colours.muted }}>—</span>;
             }},
             { key: "actions", label: "", render: (_, row) => (
               <div style={{ display: "flex", gap: 6 }}>

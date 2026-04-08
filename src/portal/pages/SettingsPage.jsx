@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTerminology } from "../TerminologyContext";
 import PlanSelectionCards from "../components/PlanSelectionCards";
 import { getUserTier, TIERS, TIER_ORDER } from "../tierConfig";
 // SettingsPage
@@ -6,6 +7,7 @@ import { getUserTier, TIERS, TIER_ORDER } from "../tierConfig";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage(props) {
+  const { t } = useTerminology();
   const {
     profile,
     setProfile,
@@ -197,8 +199,8 @@ export default function SettingsPage(props) {
 
             {/* Google Review & Customer Engagement */}
             <div style={{ gridColumn: "1 / -1", borderTop: `1px solid ${colours.border || "#E2E8F0"}`, paddingTop: 20, marginTop: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: colours.text, marginBottom: 4 }}>⭐ Customer Reviews</div>
-              <p style={{ fontSize: 12, color: colours.muted, marginBottom: 12 }}>When a job is completed, your customer will automatically receive a review request email. Paste your Google Review link below so they can leave a review in one tap.</p>
+              <div style={{ fontSize: 14, fontWeight: 800, color: colours.text, marginBottom: 4 }}>⭐ {t("customer")} Reviews</div>
+              <p style={{ fontSize: 12, color: colours.muted, marginBottom: 12 }}>When a {t("job").toLowerCase()} is completed, your {t("customer").toLowerCase()} will automatically receive a review request email. Paste your Google Review link below so they can leave a review in one tap.</p>
               <div>
                 <label style={labelStyle}>Google Review URL</label>
                 <input
@@ -213,7 +215,7 @@ export default function SettingsPage(props) {
               <div style={{ marginTop: 12 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14 }}>
                   <input type="checkbox" checked={profile.autoSendReviewRequest !== false} onChange={e => setProfile({ ...profile, autoSendReviewRequest: e.target.checked })} />
-                  Automatically email a review request when a job is completed
+                  Automatically email a review request when a {t("job").toLowerCase()} is completed
                 </label>
               </div>
             </div>
@@ -801,14 +803,14 @@ export default function SettingsPage(props) {
 
             {/* Subcontractor invitations section */}
             <div style={{ marginTop: 24, borderTop: `1px solid ${colours.border}`, paddingTop: 20 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: colours.text, marginBottom: 4 }}>Subcontractors</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: colours.text, marginBottom: 4 }}>{t("subcontractors")}</div>
               <div style={{ fontSize: 13, color: colours.muted, lineHeight: 1.6, marginBottom: 12 }}>
-                Subcontractors get a limited portal where they can view assigned jobs and submit their costs (labour, materials, receipts).
-                Assign them to specific jobs from the Scheduling → Job Costing panel.
+                {t("subcontractors")} get a limited portal where they can view assigned {t("jobs").toLowerCase()} and submit their costs (labour, materials, receipts).
+                Assign them to specific {t("jobs").toLowerCase()} from the {t("schedule")} → Job Costing panel.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
                 <div style={{ flex: 1, minWidth: 220 }}>
-                  <label style={labelStyle}>Subcontractor Email</label>
+                  <label style={labelStyle}>{t("subcontractor")} Email</label>
                   <input
                     style={inputStyle}
                     type="email"
@@ -843,13 +845,13 @@ export default function SettingsPage(props) {
                       const { error } = await supabase.functions.invoke("send-document-email", {
                         body: {
                           to: [email],
-                          subject: `Subcontractor portal invite from ${profile.businessName || "your contractor"}`,
-                          html: `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;"><h2 style="color:#6A1B9A;margin-bottom:12px;">Subcontractor Portal Invite</h2><p style="font-size:14px;line-height:1.7;color:#334155;">${profile.businessName || "A business"} has invited you to join their subcontractor portal.</p><p style="font-size:14px;line-height:1.7;color:#334155;">Use the button below to create your subcontractor login with this email address. Once the owner assigns your subcontractor role and jobs, you'll be able to view assigned work and submit receipts and costs.</p><p style="margin:24px 0;"><a href="${inviteUrl}" style="display:inline-block;background:#6A1B9A;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;">Create subcontractor account</a></p><p style="font-size:13px;line-height:1.7;color:#64748B;">If the button does not work, copy and paste this link into your browser:<br /><a href="${inviteUrl}">${inviteUrl}</a></p></div>`,
+                          subject: `${t("subcontractor")} portal invite from ${profile.businessName || "your contractor"}`,
+                          html: `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;"><h2 style="color:#6A1B9A;margin-bottom:12px;">${t("subcontractor")} Portal Invite</h2><p style="font-size:14px;line-height:1.7;color:#334155;">${profile.businessName || "A business"} has invited you to join their ${t("subcontractor").toLowerCase()} portal.</p><p style="font-size:14px;line-height:1.7;color:#334155;">Use the button below to create your ${t("subcontractor").toLowerCase()} login with this email address. Once the owner assigns your ${t("subcontractor").toLowerCase()} role and ${t("jobs").toLowerCase()}, you'll be able to view assigned work and submit receipts and costs.</p><p style="margin:24px 0;"><a href="${inviteUrl}" style="display:inline-block;background:#6A1B9A;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;">Create ${t("subcontractor").toLowerCase()} account</a></p><p style="font-size:13px;line-height:1.7;color:#64748B;">If the button does not work, copy and paste this link into your browser:<br /><a href="${inviteUrl}">${inviteUrl}</a></p></div>`,
                         },
                       });
                       if (error) throw error;
                       setSubcontractorInviteEmail("");
-                      toast.success("Subcontractor invite sent!");
+                      toast.success(`${t("subcontractor")} invite sent!`);
                     } catch (err) {
                       toast.error(err.message || "Failed to send subcontractor invite");
                     } finally {
@@ -857,17 +859,17 @@ export default function SettingsPage(props) {
                     }
                   }}
                 >
-                  {sendingSubcontractorInvite ? "Sending..." : "Send Subcontractor Invite"}
+                  {sendingSubcontractorInvite ? "Sending..." : `Send ${t("subcontractor")} Invite`}
                 </button>
               </div>
               <div style={{ background: "#F3E5F5", borderRadius: 12, padding: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#6A1B9A", marginBottom: 4 }}>How it works</div>
                 <ol style={{ fontSize: 12, color: "#4A148C", lineHeight: 1.7, margin: 0, paddingLeft: 20 }}>
-                  <li>Send them the subcontractor invite email above so they land on the subcontractor sign-up page</li>
+                  <li>Send them the {t("subcontractor").toLowerCase()} invite email above so they land on the {t("subcontractor").toLowerCase()} sign-up page</li>
                   <li>They create an account using the invited email address</li>
-                  <li>You assign the <strong>subcontractor</strong> role to their account (contact admin)</li>
-                  <li>Assign them to jobs from the Scheduling page → Job Costing → Subcontractor tab</li>
-                  <li>They'll see only their assigned jobs and can submit costs with receipts</li>
+                  <li>You assign the <strong>{t("subcontractor").toLowerCase()}</strong> role to their account (contact admin)</li>
+                  <li>Assign them to {t("jobs").toLowerCase()} from the {t("schedule")} page → Job Costing → {t("subcontractor")} tab</li>
+                  <li>They'll see only their assigned {t("jobs").toLowerCase()} and can submit costs with receipts</li>
                 </ol>
               </div>
             </div>

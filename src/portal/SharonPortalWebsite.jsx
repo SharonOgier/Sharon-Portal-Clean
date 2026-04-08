@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./client";
+import { syncEngine } from "./SyncEngine";
 import { TerminologyProvider } from "./TerminologyContext";
 import MobileWizard from "./MobileWizard";
 import { isPageAllowed, getUserTier, TIERS, PRODUCT_TO_TIER, TIER_ORDER } from "./tierConfig";
@@ -97,6 +98,7 @@ import ExpensesPage         from "./pages/ExpensesPage";
 import AssetsPage           from "./pages/AssetsPage";
 import PropertiesPage       from "./pages/PropertiesPage";
 import ChemicalRecordsPage  from "./pages/ChemicalRecordsPage";
+import CompliancePage       from "./pages/CompliancePage";
 import LivestockPage        from "./pages/LivestockPage";
 import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
@@ -269,9 +271,32 @@ export default function AccountingPortalPrototype() {
   );
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" ? !navigator.onLine : false);
   const [showBackOnline, setShowBackOnline] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [showSyncLog, setShowSyncLog] = useState(false);
+  const [syncLog, setSyncLog] = useState([]);
   const [realtimePulse, setRealtimePulse] = useState(null); // table name that just updated
   const [realtimeStatusByKey, setRealtimeStatusByKey] = useState({});
   const realtimeChannelRef = useRef(null);
+  const updatePendingCount = async () => {
+    if (!authUser?.id) return;
+    const tables = Object.values(SUPABASE_TABLES);
+    let count = 0;
+    let allPending = [];
+    for (const table of tables) {
+      const pending = await syncEngine.getPending(table);
+      count += pending.length;
+      allPending = [...allPending, ...pending.map(r => ({ ...r, tableName: table }))];
+    }
+    setPendingSyncCount(count);
+    setSyncLog(allPending);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(updatePendingCount, 5000);
+    updatePendingCount();
+    return () => clearInterval(interval);
+  }, [authUser]);
+
   const [profile, setProfile] = useState(initialProfile);
   const [isSyncing, setIsSyncing] = useState(false);
   const [clients, setClients] = useState(initialClients);
@@ -1176,6 +1201,7 @@ export default function AccountingPortalPrototype() {
   const upsertRecordInDatabase = async (tableName, record) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
 
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
     const timestamp = new Date().toISOString();
     const prepared = {
       ...record,
@@ -1197,11 +1223,36 @@ export default function AccountingPortalPrototype() {
     }
 
     return prepared;
+=======
+    // 1. Assign a temporary numeric ID if it doesn't have one,
+    // but try to keep it unique enough.
+    const localRecord = {
+      ...record,
+      id: record.id || (Date.now() + Math.random())
+    };
+
+    // 2. Save locally first
+    await syncEngine.init(authUser.id);
+    const savedLocal = await syncEngine.saveLocal(tableName, localRecord);
+    updatePendingCount();
+
+    // 3. Attempt sync if online
+    if (!isOffline) {
+      syncEngine.syncTable(tableName, supabase, authUser.id).then(() => {
+        updatePendingCount();
+      }).catch(err => {
+        console.warn("Background sync failed:", err);
+      });
+    }
+
+    return savedLocal;
+>>>>>>> master
   };
 
   const deleteRecordFromDatabase = async (tableName, id) => {
     if (!authUser?.id) throw new Error("Please sign in first.");
 
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
     // 1. Delete locally immediately
     await SyncEngine.deleteLocalRecord(tableName, id);
 
@@ -1212,6 +1263,17 @@ export default function AccountingPortalPrototype() {
     if (!isOffline && supabase) {
       setIsSyncing(true);
       SyncEngine.syncQueue(supabase).finally(() => setIsSyncing(false));
+=======
+    // 1. Mark for deletion locally
+    await syncEngine.init(authUser.id);
+    await syncEngine.deleteLocal(tableName, id);
+
+    // 2. Attempt sync if online
+    if (!isOffline) {
+      syncEngine.syncTable(tableName, supabase, authUser.id).catch(err => {
+        console.warn("Background delete sync failed:", err);
+      });
+>>>>>>> master
     }
   };
 
@@ -1406,12 +1468,51 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
+=======
+  const readPendingPaddockEventQueue = () => {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(PADDOCK_EVENT_QUEUE_KEY);
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writePendingPaddockEventQueue = (items) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(PADDOCK_EVENT_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  };
+
+  const upsertPaddockEventInState = (items, nextItem) => {
+    const list = Array.isArray(items) ? items : [];
+    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
+    if (byId >= 0) {
+      const copy = [...list];
+      copy[byId] = nextItem;
+      return copy;
+    }
+    const byClientRef = nextItem?.clientRef
+      ? list.findIndex((row) => String(row.clientRef || "") === String(nextItem.clientRef || ""))
+      : -1;
+    if (byClientRef >= 0) {
+      const copy = [...list];
+      copy[byClientRef] = nextItem;
+      return copy;
+    }
+    return [...list, nextItem];
+  };
+
+>>>>>>> master
   const savePaddockEvent = async (payload, opts = {}) => {
     const clientRef = payload?.clientRef || `paddock-event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const prepared = {
       ...payload,
       clientRef,
       archived: Boolean(payload?.archived),
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
     };
     try {
       const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, prepared);
@@ -1423,7 +1524,23 @@ export default function AccountingPortalPrototype() {
     } catch (err) {
       console.error("Save paddock event error:", err);
       return null;
+=======
+      updatedAt: timestamp,
+      updated_at: timestamp,
+    };
+
+    const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, prepared);
+    setPaddockEvents((prev) => upsertPaddockEventInState(prev, saved));
+
+    if (!opts.silent) {
+      if (saved.sync_status === "pending") {
+        toast.success("Saved offline. Will sync when back online.");
+      } else {
+        toast.success(payload?.id ? "Paddock history updated!" : "Paddock history event logged!");
+      }
+>>>>>>> master
     }
+    return saved;
   };
 
   const archivePaddockEvent = async (id) => {
@@ -1445,10 +1562,42 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
+=======
+  const readPendingLivestockQueue = () => {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(LIVESTOCK_QUEUE_KEY);
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writePendingLivestockQueue = (items) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(LIVESTOCK_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  };
+
+  const upsertLivestockInState = (items, nextItem) => {
+    const list = Array.isArray(items) ? items : [];
+    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
+    if (byId >= 0) {
+      const copy = [...list];
+      copy[byId] = nextItem;
+      return copy;
+    }
+    return [...list, nextItem];
+  };
+
+>>>>>>> master
   const saveLivestockRecord = async (payload, opts = {}) => {
+    const now = new Date().toISOString();
     const prepared = {
       ...payload,
       archived: Boolean(payload?.archived),
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
     };
     try {
       const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, prepared);
@@ -1460,7 +1609,23 @@ export default function AccountingPortalPrototype() {
     } catch (err) {
       console.error("Save livestock record error:", err);
       return null;
+=======
+      updatedAt: now,
+      updated_at: now,
+    };
+
+    const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, prepared);
+    setLivestockRecords((prev) => upsertLivestockInState(prev, saved));
+
+    if (!opts.silent) {
+      if (saved.sync_status === "pending") {
+        toast.success("Saved offline. Will sync when back online.");
+      } else {
+        toast.success(payload?.id ? "Livestock record updated!" : "Livestock record saved!");
+      }
+>>>>>>> master
     }
+    return saved;
   };
 
   const archiveLivestockRecord = async (id) => {
@@ -2187,50 +2352,119 @@ export default function AccountingPortalPrototype() {
     setSupabaseSyncStatus("Loading from Supabase database...");
 
     try {
-      // Each table is fetched independently so a missing/broken table never
-      // blocks the others from loading.
+      await syncEngine.init(authUser.id);
+
+      // 1. Load from IndexedDB first for speed
+      const loadFromIDB = async (table) => {
+          const local = await syncEngine.getTable(table);
+          return local.filter(r => !r.is_deleted);
+      };
+
+      const [
+        localProfileRows, localClients, localInvoices, localQuotes,
+        localExpenses, localIncomeSources, localServices, localDocuments,
+        localSuppliers, localAssets, localProperties, localJobs,
+        localRecurringReminders, localSupplierPriceLists, localChemicalRecords,
+        localPaddockEvents, localLivestockRecords,
+      ] = await Promise.all([
+        loadFromIDB(SUPABASE_TABLES.profile), loadFromIDB(SUPABASE_TABLES.clients),
+        loadFromIDB(SUPABASE_TABLES.invoices), loadFromIDB(SUPABASE_TABLES.quotes),
+        loadFromIDB(SUPABASE_TABLES.expenses), loadFromIDB(SUPABASE_TABLES.incomeSources),
+        loadFromIDB(SUPABASE_TABLES.services), loadFromIDB(SUPABASE_TABLES.documents),
+        loadFromIDB(SUPABASE_TABLES.suppliers), loadFromIDB(SUPABASE_TABLES.assets),
+        loadFromIDB(SUPABASE_TABLES.properties), loadFromIDB(SUPABASE_TABLES.jobs),
+        loadFromIDB(SUPABASE_TABLES.recurringReminders), loadFromIDB(SUPABASE_TABLES.supplierPriceLists),
+        loadFromIDB(SUPABASE_TABLES.chemicalRecords), loadFromIDB(SUPABASE_TABLES.paddockEvents),
+        loadFromIDB(SUPABASE_TABLES.livestockRecords)
+      ]);
+
+      // Helper to update state from local if not already hydrated
+      const setInitialState = (setter, data) => {
+          if (data && data.length > 0) setter(data);
+      };
+
+      setInitialState(setClients, localClients);
+      setInitialState(setInvoices, localInvoices);
+      setInitialState(setQuotes, localQuotes);
+      setInitialState(setExpenses, localExpenses);
+      setInitialState(setIncomeSources, localIncomeSources);
+      setInitialState(setServices, localServices);
+      setInitialState(setDocuments, localDocuments);
+      setInitialState(setSuppliers, localSuppliers);
+      setInitialState(setAssets, localAssets);
+      setInitialState(setProperties, localProperties);
+      setInitialState(setJobs, localJobs);
+      setInitialState(setRecurringReminders, localRecurringReminders);
+      setInitialState(setSupplierPriceLists, localSupplierPriceLists);
+      setInitialState(setChemicalRecords, localChemicalRecords);
+      setInitialState(setPaddockEvents, localPaddockEvents);
+      setInitialState(setLivestockRecords, localLivestockRecords);
+
+      if (localProfileRows.length > 0) {
+          const p = localProfileRows[0];
+          setProfile({ ...initialProfile, ...p });
+          if (p.setupComplete) setSetupComplete(true);
+      }
+
+      // If offline, we stop here
+      if (isOffline) {
+          setHasLoadedUserProfile(true);
+          setIsSupabaseRestoring(false);
+          setSupabaseSyncStatus("Working offline (loaded from local)");
+          return;
+      }
+
+      // 2. Fetch from Supabase in the background
       const safeF = (table) => fetchCollectionFromDatabase(table).catch((err) => {
         console.warn(`[restore] Could not load table "${table}":`, err?.message);
         return [];
       });
       const [
-        remoteProfileRows,
-        remoteClients,
-        remoteInvoices,
-        remoteQuotes,
-        remoteExpenses,
-        remoteIncomeSources,
-        remoteServices,
-        remoteDocuments,
-        remoteSuppliers,
-        remoteAssets,
-        remoteProperties,
-        remoteJobs,
-        remoteRecurringReminders,
-        remoteSupplierPriceLists,
-        remoteChemicalRecords,
-        remotePaddockEvents,
-        remoteLivestockRecords,
+        remoteProfileRows, remoteClients, remoteInvoices, remoteQuotes,
+        remoteExpenses, remoteIncomeSources, remoteServices, remoteDocuments,
+        remoteSuppliers, remoteAssets, remoteProperties, remoteJobs,
+        remoteRecurringReminders, remoteSupplierPriceLists, remoteChemicalRecords,
+        remotePaddockEvents, remoteLivestockRecords,
       ] = await Promise.all([
-        safeF(SUPABASE_TABLES.profile),
-        safeF(SUPABASE_TABLES.clients),
-        safeF(SUPABASE_TABLES.invoices),
-        safeF(SUPABASE_TABLES.quotes),
-        safeF(SUPABASE_TABLES.expenses),
-        safeF(SUPABASE_TABLES.incomeSources),
-        safeF(SUPABASE_TABLES.services),
-        safeF(SUPABASE_TABLES.documents),
-        safeF(SUPABASE_TABLES.suppliers),
-        safeF(SUPABASE_TABLES.assets),
-        safeF(SUPABASE_TABLES.properties),
-        safeF(SUPABASE_TABLES.jobs),
-        safeF(SUPABASE_TABLES.recurringReminders),
-        safeF(SUPABASE_TABLES.supplierPriceLists),
-        safeF(SUPABASE_TABLES.chemicalRecords),
-        safeF(SUPABASE_TABLES.paddockEvents),
+        safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients),
+        safeF(SUPABASE_TABLES.invoices), safeF(SUPABASE_TABLES.quotes),
+        safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
+        safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents),
+        safeF(SUPABASE_TABLES.suppliers), safeF(SUPABASE_TABLES.assets),
+        safeF(SUPABASE_TABLES.properties), safeF(SUPABASE_TABLES.jobs),
+        safeF(SUPABASE_TABLES.recurringReminders), safeF(SUPABASE_TABLES.supplierPriceLists),
+        safeF(SUPABASE_TABLES.chemicalRecords), safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
       ]);
       hasHydratedSupabaseState.current = true;
+
+      // 3. Update IndexedDB with remote data
+      const updateIDB = async (table, remoteItems) => {
+          if (!remoteItems) return;
+          for (const item of remoteItems) {
+              await syncEngine.saveLocal(table, item, "synced");
+          }
+      };
+
+      await Promise.all([
+          updateIDB(SUPABASE_TABLES.profile, remoteProfileRows),
+          updateIDB(SUPABASE_TABLES.clients, remoteClients),
+          updateIDB(SUPABASE_TABLES.invoices, remoteInvoices),
+          updateIDB(SUPABASE_TABLES.quotes, remoteQuotes),
+          updateIDB(SUPABASE_TABLES.expenses, remoteExpenses),
+          updateIDB(SUPABASE_TABLES.incomeSources, remoteIncomeSources),
+          updateIDB(SUPABASE_TABLES.services, remoteServices),
+          updateIDB(SUPABASE_TABLES.documents, remoteDocuments),
+          updateIDB(SUPABASE_TABLES.suppliers, remoteSuppliers),
+          updateIDB(SUPABASE_TABLES.assets, remoteAssets),
+          updateIDB(SUPABASE_TABLES.properties, remoteProperties),
+          updateIDB(SUPABASE_TABLES.jobs, remoteJobs),
+          updateIDB(SUPABASE_TABLES.recurringReminders, remoteRecurringReminders),
+          updateIDB(SUPABASE_TABLES.supplierPriceLists, remoteSupplierPriceLists),
+          updateIDB(SUPABASE_TABLES.chemicalRecords, remoteChemicalRecords),
+          updateIDB(SUPABASE_TABLES.paddockEvents, remotePaddockEvents),
+          updateIDB(SUPABASE_TABLES.livestockRecords, remoteLivestockRecords),
+      ]);
 
       // Fetch approved subcontractor costs for business owner (for ATO Tax Form)
       try {
@@ -2320,8 +2554,14 @@ export default function AccountingPortalPrototype() {
       setShowBackOnline(true);
       // Auto-resync data when coming back online
       if (authUser && hasHydratedSupabaseState.current) {
+<<<<<<< feature/offline-sync-livestock-10398540462924352948
         SyncEngine.syncQueue(supabase);
         restorePortalStateFromSupabase();
+=======
+        syncEngine.syncAll(supabase, authUser.id).then(() => {
+            restorePortalStateFromSupabase();
+        });
+>>>>>>> master
       }
       setTimeout(() => setShowBackOnline(false), 4000);
     };
@@ -2362,6 +2602,7 @@ export default function AccountingPortalPrototype() {
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
+      sas_machinery_logs: { setter: null, key: "machinery" },
     };
 
     const parseRow = (row) => {
@@ -2446,6 +2687,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery_logs", filter: `user_id=eq.${uid}` }, handleChange)
       .subscribe();
 
     realtimeChannelRef.current = channel;
@@ -5213,7 +5455,16 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
                     ? { bg: "#ECFDF5", border: "#A7F3D0", color: "#065F46" }
                     : { bg: "#F8FAFC", border: colours.border, color: colours.muted };
               return (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginBottom: 14 }}>
+                  {pendingSyncCount > 0 && (
+                      <button
+                        onClick={() => setShowSyncLog(true)}
+                        style={{ ...buttonSecondary, padding: "7px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6, borderColor: colours.purple, color: colours.purple }}
+                      >
+                        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: colours.purple, animation: "sas-realtime-pulse 1.5s infinite" }} />
+                        {pendingSyncCount} pending
+                      </button>
+                  )}
                   <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 999, border: `1px solid ${syncTone.border}`, background: syncTone.bg, color: syncTone.color, fontSize: 12, fontWeight: 700 }}>
                     <span>{realtimePulse === activePage ? "●" : "○"}</span>
                     <span>{syncLabel}</span>
@@ -5484,6 +5735,12 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               archiveLivestockRecord={archiveLivestockRecord}
               formatDateAU={formatDateAU}
               confirm={confirm}
+            />}
+            {activePage === "compliance" && <CompliancePage
+              chemicalRecords={chemicalRecords}
+              livestockRecords={livestockRecords}
+              jobs={jobs}
+              properties={properties}
             />}
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}
@@ -5779,6 +6036,106 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       {confirmModal}
+
+      {/* -- Sync Log / Offline Queue Modal -- */}
+      {showSyncLog && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: 600, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", fontFamily: "sans-serif", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: colours.text }}>Offline Sync Queue</div>
+                <div style={{ fontSize: 13, color: colours.muted, marginTop: 4 }}>
+                  {pendingSyncCount} item{pendingSyncCount !== 1 ? "s" : ""} waiting to be saved to cloud.
+                </div>
+              </div>
+              <button onClick={() => setShowSyncLog(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: colours.muted }}>×</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "grid", gap: 10, paddingRight: 4 }}>
+              {syncLog.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: colours.muted }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                  <div>All changes are synced.</div>
+                </div>
+              ) : (
+                syncLog.map((item, idx) => (
+                  <div key={`${item.tableName}-${item.id}`} style={{ padding: 14, borderRadius: 12, border: `1px solid ${item.sync_status === 'conflict' ? '#FECACA' : colours.border}`, background: item.sync_status === 'conflict' ? '#FEF2F2' : '#F8FAFC' }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: colours.muted }}>{item.tableName.replace('sas_', '')}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{item.name || item.description || item.title || `Record #${item.id}`}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: item.sync_status === 'conflict' ? '#DC2626' : colours.purple }}>
+                          {item.sync_status === 'conflict' ? 'CONFLICT' : 'PENDING'}
+                        </div>
+                        <div style={{ fontSize: 10, color: colours.muted, marginTop: 2 }}>{new Date(item.updated_at).toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+
+                    {item.sync_status === 'conflict' && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #FECACA" }}>
+                        <div style={{ fontSize: 12, color: "#991B1B", marginBottom: 10 }}>
+                          <strong>Conflict:</strong> {item.last_sync_error || "The remote version of this record is newer."}
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={async () => {
+                                // Resolve by keeping remote: just mark as synced and overwrite local with remote next sync
+                                // Actually better to fetch remote and update local.
+                                try {
+                                    const { data: remote } = await supabase.from(item.tableName).select("data, updated_at, user_id, id").eq("id", item.id).single();
+                                    if (remote) {
+                                        const parsedRemote = { ...(remote.data || {}), id: remote.id, user_id: remote.user_id, updated_at: remote.updated_at };
+                                        await syncEngine.saveLocal(item.tableName, parsedRemote, "synced");
+                                        updatePendingCount();
+                                        toast.success("Remote version kept.");
+                                    }
+                                } catch (e) { toast.error("Failed to fetch remote version."); }
+                            }}
+                            style={{ ...buttonSecondary, flex: 1, padding: "8px", fontSize: 12 }}
+                          >
+                            Keep Cloud
+                          </button>
+                          <button
+                            onClick={async () => {
+                                // Resolve by keeping local: update timestamp and mark pending
+                                const resolved = { ...item, updated_at: new Date().toISOString(), sync_status: "pending" };
+                                await syncEngine.saveLocal(item.tableName, resolved);
+                                updatePendingCount();
+                                if (!isOffline) syncEngine.syncTable(item.tableName, supabase, authUser.id);
+                                toast.success("Local version preferred. Syncing...");
+                            }}
+                            style={{ ...buttonPrimary, flex: 1, padding: "8px", fontSize: 12 }}
+                          >
+                            Overwrite Cloud
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
+              <button
+                onClick={async () => {
+                    if (isOffline) { toast.warning("You are offline."); return; }
+                    toast.info("Syncing...");
+                    await syncEngine.syncAll(supabase, authUser.id);
+                    updatePendingCount();
+                    toast.success("Sync complete.");
+                }}
+                disabled={isOffline || pendingSyncCount === 0}
+                style={{ ...buttonPrimary, flex: 1, opacity: (isOffline || pendingSyncCount === 0) ? 0.5 : 1 }}
+              >
+                Sync Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* -- Password Reset Sent Modal -- */}
       {showResetSentModal && (
