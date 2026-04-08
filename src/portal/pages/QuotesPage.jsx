@@ -1,4 +1,5 @@
 import React from "react";
+import { useTerminology } from "../TerminologyContext";
 import EntityLink from "../EntityLink";
 import { exportToCSV } from "../PortalHelpers";
 import {
@@ -28,6 +29,7 @@ class QuotesErrorBoundary extends React.Component {
 // -----------------------------------------------------------------------------
 
 function QuotesPageInner(props) {
+  const { t } = useTerminology();
   const {
     profile,
     clients,
@@ -144,7 +146,7 @@ function QuotesPageInner(props) {
     ];
     return (
       <div style={{ display: "grid", gap: 20 }}>
-        <DashboardHero title="Quotes" subtitle="Create and manage quotes for clients. Track acceptance rates and convert to invoices." highlight={`${conversionRate.toFixed(0)}% accepted`}>
+        <DashboardHero title="Quotes" subtitle={`Create and manage quotes for ${t("customers").toLowerCase()}. Track acceptance rates and convert to invoices.`} highlight={`${conversionRate.toFixed(0)}% accepted`}>
           <InsightChip label="Total quoted" value={currency(totalQuoted)} />
           <InsightChip label="Accepted" value={String(acceptedQuotes.length)} />
           <InsightChip label="Pending" value={String(pendingQuotes.length)} />
@@ -263,7 +265,7 @@ function QuotesPageInner(props) {
         <SectionCard title="Create Quote">
           {/* -- Wizard progress bar -- */}
           <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
-            {["Client", "Details", "Line Items", "Review & Save"].map((label, i) => {
+            {[t("customer"), "Details", "Line Items", "Review & Save"].map((label, i) => {
               const step = i + 1;
               const active = quoteWizardStep === step;
               const done = quoteWizardStep > step;
@@ -288,10 +290,10 @@ function QuotesPageInner(props) {
           {quoteWizardStep === 1 && (
             <div style={{ display: "grid", gap: 20 }}>
               <div>
-                <label style={labelStyle}>Search or Select Client</label>
+                <label style={labelStyle}>Search or Select {t("customer")}</label>
                 <input style={{ ...inputStyle, fontSize: 15 }} value={quoteClientSearch}
                   onChange={(e) => { setQuoteClientSearch(e.target.value); if (!e.target.value) setQuoteForm((p) => ({ ...p, clientId: "" })); }}
-                  placeholder="Type client name..." />
+                  placeholder={`Type ${t("customer").toLowerCase()} name...`} />
                 {quoteClientSearch && (
                   <div style={{ border: `1px solid ${colours.border}`, borderRadius: 10, marginTop: 4, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
                     {matchingClients
@@ -302,7 +304,7 @@ function QuotesPageInner(props) {
                         </div>
                       ))}
                     {matchingClients.length === 0 && (
-                      <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new client below</div>
+                      <div style={{ padding: "10px 14px", fontSize: 13, color: colours.muted }}>No match -- add a new {t("customer").toLowerCase()} below</div>
                     )}
                   </div>
                 )}
@@ -322,7 +324,7 @@ function QuotesPageInner(props) {
                 return c ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
                     <div style={{ ...cardStyle, padding: 16, background: colours.lightPurple }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 8 }}>Client Details</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 8 }}>{t("customer")} Details</div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: colours.text }}>{c.name}</div>
                       {c.businessName && <div style={{ fontSize: 13, color: colours.muted, marginTop: 4 }}>{c.businessName}</div>}
                       {c.abn && <div style={{ fontSize: 13, color: colours.muted, marginTop: 2 }}>ABN: {c.abn}</div>}
@@ -345,7 +347,7 @@ function QuotesPageInner(props) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button style={{ ...buttonSecondary, fontSize: 13 }} onClick={() => { setClientModalForm({ name: "", businessName: "", email: "", phone: "", address: "", abn: "", defaultCurrency: "AUD $", workType: "" }); setEditingClientId(null); setShowClientModal(true); }}>
-                    + New Client
+                    + New {t("customer")}
                   </button>
                   <button style={{ ...buttonSecondary, fontSize: 13 }} onClick={() => { setImportType("clients"); setImportRows([]); setImportError(""); setShowImportModal(true); }}>
                     Upload Import
@@ -565,7 +567,7 @@ function QuotesPageInner(props) {
         <SectionCard title="Quote List" right={
           <button style={buttonSecondary} onClick={() => exportToCSV(quotes, [
             { key: "quoteNumber", label: "Quote" },
-            { key: "clientId", label: "Client", exportValue: (row) => getClientName(row.clientId) },
+            { key: "clientId", label: t("customer"), exportValue: (row) => getClientName(row.clientId) },
             { key: "quoteDate", label: "Date" },
             { key: "expiryDate", label: "Expiry" },
             { key: "total", label: "Total" },
@@ -576,7 +578,7 @@ function QuotesPageInner(props) {
             emptyState={{ icon: "", title: "No quotes yet", message: "Create your first quote using the form above. Quotes can be converted to invoices once accepted." }}
             columns={[
               { key: "quoteNumber", label: "Quote" },
-              { key: "clientId", label: "Client", render: (_, row) => <EntityLink label={getClientName(row.clientId)} targetPage="clients" setActivePage={setActivePage} /> },
+              { key: "clientId", label: t("customer"), render: (_, row) => <EntityLink label={getClientName(row.clientId)} targetPage="clients" setActivePage={setActivePage} /> },
               { key: "quoteDate", label: "Date", render: (v) => formatDateAU(v) },
               { key: "expiryDate", label: "Expiry", render: (v) => formatDateAU(v) },
               { key: "total", label: "Total", render: (v, row) => formatCurrencyByCode(v, row.currencyCode || getClientCurrencyCode(getClientById(row.clientId))) },
@@ -615,16 +617,16 @@ function QuotesPageInner(props) {
                         <button
                           style={{ ...buttonSecondary, color: colours.teal, borderColor: colours.teal }}
                           onClick={() => convertQuoteToInvoice(row)}
-                          title="Mark as Accepted and create a Draft invoice"
+                          title={`Mark as Accepted and create a Draft invoice`}
                         >
                           → Invoice
                         </button>
                         <button
                           style={{ ...buttonSecondary, color: "#2E7D32", borderColor: "#2E7D32" }}
                           onClick={() => convertQuoteToJob(row)}
-                          title="Mark as Accepted and create a scheduled Job"
+                          title={`Mark as Accepted and create a scheduled ${t("job")}`}
                         >
-                          → Job
+                          → {t("job")}
                         </button>
                       </>
                     )}
@@ -705,7 +707,7 @@ function QuotesPageInner(props) {
                         }}
                       >
                         <div>
-                          <label style={labelStyle}>Client</label>
+                          <label style={labelStyle}>{t("customer")}</label>
                           <select
                             style={inputStyle}
                             value={quoteEditorForm.clientId}

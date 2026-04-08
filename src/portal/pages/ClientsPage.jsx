@@ -1,18 +1,17 @@
 import React, { useState, useMemo } from "react";
+import { useTerminology } from "../TerminologyContext";
 import { exportToCSV } from "../PortalHelpers";
 import EntityLink from "../EntityLink";
 
 // ---------------------------------------------------------------------------
 // ROLE DEFINITIONS
 // ---------------------------------------------------------------------------
-const ROLES = [
-  { key: "customer",      label: "Customer",      color: "#2563EB", bg: "#DBEAFE" },
+const getRoles = (t) => [
+  { key: "customer",      label: t("customer"),      color: "#2563EB", bg: "#DBEAFE" },
   { key: "staff",          label: "Staff",          color: "#16A34A", bg: "#DCFCE7" },
-  { key: "subcontractor",  label: "Subcontractor",  color: "#EA580C", bg: "#FED7AA" },
+  { key: "subcontractor",  label: t("subcontractor"),  color: "#EA580C", bg: "#FED7AA" },
   { key: "supplier",       label: "Supplier",       color: "#7C3AED", bg: "#EDE9FE" },
 ];
-
-const ROLE_MAP = Object.fromEntries(ROLES.map(r => [r.key, r]));
 
 // ---------------------------------------------------------------------------
 // ROLE-SPECIFIC FIELDS (unlocked when role selected)
@@ -44,8 +43,8 @@ const ROLE_FIELDS = {
 // ---------------------------------------------------------------------------
 // ROLE BADGE COMPONENT
 // ---------------------------------------------------------------------------
-function RoleBadge({ roleKey, small }) {
-  const role = ROLE_MAP[roleKey];
+function RoleBadge({ roleKey, small, t }) {
+  const role = getRoles(t).find(r => r.key === roleKey);
   if (!role) return null;
   return (
     <span style={{
@@ -66,7 +65,7 @@ function RoleBadge({ roleKey, small }) {
 // ---------------------------------------------------------------------------
 // CONTACT FORM COMPONENT
 // ---------------------------------------------------------------------------
-function ContactForm({ form, setForm, colours, inputStyle, labelStyle, cardStyle, buttonPrimary, buttonSecondary, onSave, onCancel, isEditing }) {
+function ContactForm({ form, setForm, colours, inputStyle, labelStyle, cardStyle, buttonPrimary, buttonSecondary, onSave, onCancel, isEditing, t }) {
   const roles = form.roles || [];
   const toggleRole = (key) => {
     setForm(prev => {
@@ -109,7 +108,7 @@ function ContactForm({ form, setForm, colours, inputStyle, labelStyle, cardStyle
       <div>
         <label style={{ ...labelStyle, marginBottom: 8, display: "block" }}>Roles</label>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {ROLES.map(r => (
+          {getRoles(t).map(r => (
             <label key={r.key} style={{
               display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600,
               padding: "8px 16px", borderRadius: 10, cursor: "pointer",
@@ -128,7 +127,7 @@ function ContactForm({ form, setForm, colours, inputStyle, labelStyle, cardStyle
       {roles.map(roleKey => {
         const fields = ROLE_FIELDS[roleKey];
         if (!fields) return null;
-        const roleInfo = ROLE_MAP[roleKey];
+        const roleInfo = getRoles(t).find(r => r.key === roleKey);
         return (
           <div key={roleKey} style={{ ...cardStyle, padding: 16, border: `1px solid ${roleInfo.bg}`, background: `${roleInfo.bg}33` }}>
             <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", color: roleInfo.color, marginBottom: 12 }}>{roleInfo.label} details</div>
@@ -189,7 +188,7 @@ function ContactForm({ form, setForm, colours, inputStyle, labelStyle, cardStyle
 // ---------------------------------------------------------------------------
 // RELATED JOBS SECTION
 // ---------------------------------------------------------------------------
-function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], expenses = [], colours, cardStyle, currency, safeNumber, setActivePage, formatDateAU }) {
+function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], expenses = [], colours, cardStyle, currency, safeNumber, setActivePage, formatDateAU, t }) {
   const contactId = String(contact.id);
   const contactName = (contact.name || "").toLowerCase();
   const linked = (jobs || []).filter(j => {
@@ -210,9 +209,9 @@ function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], ex
     <div style={{ display: "grid", gap: 12 }}>
       {/* Related Jobs */}
       <div style={sectionStyle}>
-        <div style={headerStyle}>Related Jobs ({linked.length})</div>
+        <div style={headerStyle}>Related {t("jobs")} ({linked.length})</div>
         {linked.length === 0 ? (
-          <div style={{ fontSize: 13, color: colours.muted }}>No jobs linked to <strong>{contact.name}</strong> yet.</div>
+          <div style={{ fontSize: 13, color: colours.muted }}>No {t("jobs").toLowerCase()} linked to <strong>{contact.name}</strong> yet.</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {linked.map((job, i) => (
@@ -236,7 +235,7 @@ function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], ex
       <div style={sectionStyle}>
         <div style={headerStyle}>Related Invoices ({linkedInvoices.length})</div>
         {linkedInvoices.length === 0 ? (
-          <div style={{ fontSize: 13, color: colours.muted }}>No invoices for this contact.</div>
+          <div style={{ fontSize: 13, color: colours.muted }}>No invoices for this {t("customer").toLowerCase()}.</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {linkedInvoices.slice(0, 10).map((inv, i) => (
@@ -261,7 +260,7 @@ function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], ex
       <div style={sectionStyle}>
         <div style={headerStyle}>Related Quotes ({linkedQuotes.length})</div>
         {linkedQuotes.length === 0 ? (
-          <div style={{ fontSize: 13, color: colours.muted }}>No quotes for this contact.</div>
+          <div style={{ fontSize: 13, color: colours.muted }}>No quotes for this {t("customer").toLowerCase()}.</div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {linkedQuotes.slice(0, 10).map((q, i) => (
@@ -306,6 +305,7 @@ function RelatedJobsSection({ contact, jobs = [], invoices = [], quotes = [], ex
 // MAIN CONTACTS PAGE
 // ---------------------------------------------------------------------------
 export default function ClientsPage(props) {
+  const { t } = useTerminology();
   const {
     clients = [],
     invoices = [],
@@ -448,10 +448,10 @@ export default function ClientsPage(props) {
   // ---- Metrics ----
   const roleCounts = useMemo(() => {
     const counts = {};
-    ROLES.forEach(r => { counts[r.key] = 0; });
+    getRoles(t).forEach(r => { counts[r.key] = 0; });
     clients.forEach(c => (c.roles || []).forEach(r => { if (counts[r] !== undefined) counts[r]++; }));
     return counts;
-  }, [clients]);
+  }, [clients, t]);
 
   const totalRevenue = invoices.filter(i => i.status === "Paid").reduce((s, i) => s + safeNumber(i.total), 0);
 
@@ -459,18 +459,18 @@ export default function ClientsPage(props) {
     <div style={{ display: "grid", gap: 20 }}>
       <DashboardHero
         title="Contacts"
-        subtitle="Manage all your contacts — customers, staff, subcontractors, and suppliers — in one place."
+        subtitle={`Manage all your contacts — ${t("customers").toLowerCase()}, staff, ${t("subcontractors").toLowerCase()}, and suppliers — in one place.`}
         highlight={String(clients.length)}
       >
-        <InsightChip label="Customers" value={String(roleCounts.customer)} />
+        <InsightChip label={t("customers")} value={String(roleCounts.customer)} />
         <InsightChip label="Staff" value={String(roleCounts.staff)} />
-        <InsightChip label="Subcontractors" value={String(roleCounts.subcontractor)} />
+        <InsightChip label={t("subcontractors")} value={String(roleCounts.subcontractor)} />
         <InsightChip label="Suppliers" value={String(roleCounts.supplier)} />
       </DashboardHero>
 
       {/* Role metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
-        {ROLES.map(r => (
+        {getRoles(t).map(r => (
           <MetricCard key={r.key} title={r.label + "s"} value={String(roleCounts[r.key])} subtitle={`Contacts tagged as ${r.label}`} accent={r.color} />
         ))}
         <MetricCard title="Total revenue" value={currency(totalRevenue)} subtitle="From all paid invoices" accent={colours.teal} />
@@ -486,8 +486,9 @@ export default function ClientsPage(props) {
               colours={colours} inputStyle={inputStyle} labelStyle={labelStyle} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
               onSave={saveClientEdits} onCancel={closeClientEditor} isEditing
+              t={t}
             />
-            <RelatedJobsSection contact={clientEditorForm} jobs={jobs} invoices={invoices} quotes={props.quotes || []} expenses={props.expenses || []} colours={colours} cardStyle={cardStyle} currency={currency} safeNumber={safeNumber} setActivePage={setActivePage} formatDateAU={props.formatDateAU} />
+            <RelatedJobsSection contact={clientEditorForm} jobs={jobs} invoices={invoices} quotes={props.quotes || []} expenses={props.expenses || []} colours={colours} cardStyle={cardStyle} currency={currency} safeNumber={safeNumber} setActivePage={setActivePage} formatDateAU={props.formatDateAU} t={t} />
             {/* Customer Portal Link */}
             {(clientEditorForm.roles || []).includes("customer") && (
               <div style={{ ...cardStyle, padding: 18, marginTop: 16, background: "#F5ECFB", border: `1px solid ${colours.purple}22` }}>
@@ -514,6 +515,7 @@ export default function ClientsPage(props) {
             colours={colours} inputStyle={inputStyle} labelStyle={labelStyle} cardStyle={cardStyle}
             buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
             onSave={saveClient} onCancel={() => setClientForm({ ...resolvedBlank })} isEditing={false}
+            t={t}
           />
         )}
       </SectionCard>
@@ -550,7 +552,7 @@ export default function ClientsPage(props) {
               }}
               onClick={() => setRoleFilter("all")}
             >All ({clients.length})</button>
-            {ROLES.map(r => (
+            {getRoles(t).map(r => (
               <button
                 key={r.key}
                 style={{
@@ -577,7 +579,7 @@ export default function ClientsPage(props) {
             )},
             { key: "roles", label: "Roles", render: (v, row) => (
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                {(row.roles || []).map(r => <RoleBadge key={r} roleKey={r} small />)}
+                {(row.roles || []).map(r => <RoleBadge key={r} roleKey={r} small t={t} />)}
                 {!(row.roles || []).length && <span style={{ fontSize: 12, color: colours.muted }}>—</span>}
               </div>
             )},
