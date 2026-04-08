@@ -97,6 +97,7 @@ import ExpensesPage         from "./pages/ExpensesPage";
 import AssetsPage           from "./pages/AssetsPage";
 import PropertiesPage       from "./pages/PropertiesPage";
 import ChemicalRecordsPage  from "./pages/ChemicalRecordsPage";
+import CompliancePage       from "./pages/CompliancePage";
 import LivestockPage        from "./pages/LivestockPage";
 import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
@@ -5671,6 +5672,12 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               archiveLivestockRecord={archiveLivestockRecord}
               formatDateAU={formatDateAU}
               confirm={confirm}
+            />}
+            {activePage === "compliance" && <CompliancePage
+              chemicalRecords={chemicalRecords}
+              livestockRecords={livestockRecords}
+              jobs={jobs}
+              properties={properties}
             />}
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}

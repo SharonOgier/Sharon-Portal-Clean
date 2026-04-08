@@ -167,13 +167,57 @@ export default function DashboardPage(props) {
       )}
 
       {businessType === "farmer" && (
-        <SectionCard title="🚜 Property Overview" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("properties")}>View {t("properties")} →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-            <ActionHubCard icon="🏡" title={t("properties")} description={`${(props.properties || []).length || 0} registered`} buttonLabel={`View ${t("properties").toLowerCase()}`} onClick={() => setActivePage("properties")} tone={colours.teal} />
-            <ActionHubCard icon="📋" title={`Active ${t("jobs")}`} description="Seasonal tasks and ongoing work" buttonLabel={`View ${t("workPlanner")}`} onClick={() => setActivePage("scheduling")} tone={colours.purple} />
-            <ActionHubCard icon="🤝" title={t("subcontractors")} description={`${clients.filter(c => (c.roles || []).includes("subcontractor")).length} active`} buttonLabel={`View ${t("subcontractors").toLowerCase()}`} onClick={() => setActivePage("clients")} tone="#EA580C" />
-          </div>
-        </SectionCard>
+        <>
+          <SectionCard title="🛡️ Compliance Status" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("compliance")}>View Dashboard →</button>}>
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const activeWhp = [
+                ...(props.chemicalRecords || []).filter(r => !r.archived && r.withholdingEndDate > today).map(r => ({ type: 'Chemical', name: r.chemicalName, end: r.withholdingEndDate })),
+                ...(props.livestockRecords || []).filter(r => !r.archived && (r.withholdingEndDate > today || r.esiEndDate > today)).map(r => ({ type: 'Livestock', name: r.mobName, end: r.withholdingEndDate > (r.esiEndDate || '') ? r.withholdingEndDate : r.esiEndDate }))
+              ];
+              const issuesCount = activeWhp.length;
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                  <div style={{
+                    width: 60, height: 60, borderRadius: "50%",
+                    display: "grid", placeItems: "center", fontSize: 24,
+                    background: issuesCount > 0 ? "#FEF2F2" : "#F0FDF4",
+                    border: `2px solid ${issuesCount > 0 ? "#FCA5A5" : "#86EFAC"}`
+                  }}>
+                    {issuesCount > 0 ? "❌" : "✔️"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: colours.text }}>
+                      {issuesCount > 0 ? `${issuesCount} Active Withholding Period${issuesCount !== 1 ? 's' : ''}` : "All Clear"}
+                    </div>
+                    <div style={{ fontSize: 13, color: colours.muted, marginTop: 4 }}>
+                      {issuesCount > 0 ? "Items flagged below require attention before sale or harvest." : "Your records are up to date and no active WHPs are detected."}
+                    </div>
+                  </div>
+                  {activeWhp.slice(0, 2).map((item, idx) => (
+                    <div key={idx} style={{ padding: "10px 14px", borderRadius: 12, background: "#FEF2F2", border: "1px solid #FEE2E2", fontSize: 13, fontWeight: 600, color: "#991B1B" }}>
+                      {item.type === 'Livestock' ? `Mob cannot be sold: ${item.name}` : `Paddock locked: ${item.name}`}
+                      <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>Until {formatDateAU(item.end)}</div>
+                    </div>
+                  ))}
+                  {issuesCount > 2 && (
+                    <div style={{ fontSize: 12, color: colours.purple, fontWeight: 700, cursor: "pointer" }} onClick={() => setActivePage("compliance")}>
+                      +{issuesCount - 2} more...
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </SectionCard>
+
+          <SectionCard title="🚜 Property Overview" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("properties")}>View {t("properties")} →</button>}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+              <ActionHubCard icon="🏡" title={t("properties")} description={`${(props.properties || []).length || 0} registered`} buttonLabel={`View ${t("properties").toLowerCase()}`} onClick={() => setActivePage("properties")} tone={colours.teal} />
+              <ActionHubCard icon="📋" title={`Active ${t("jobs")}`} description="Seasonal tasks and ongoing work" buttonLabel={`View ${t("workPlanner")}`} onClick={() => setActivePage("scheduling")} tone={colours.purple} />
+              <ActionHubCard icon="🤝" title={t("subcontractors")} description={`${clients.filter(c => (c.roles || []).includes("subcontractor")).length} active`} buttonLabel={`View ${t("subcontractors").toLowerCase()}`} onClick={() => setActivePage("clients")} tone="#EA580C" />
+            </div>
+          </SectionCard>
+        </>
       )}
 
       {businessType === "smallbusiness" && (
