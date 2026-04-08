@@ -130,6 +130,7 @@ export default function AccountingPortalPrototype() {
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ];
+  const PADDOCK_EVENT_QUEUE_KEY = "sas_pending_paddock_events";
 
   const getMimeTypeFromFile = (file) => {
     const explicitType = String(file?.type || "").trim().toLowerCase();
@@ -187,6 +188,7 @@ export default function AccountingPortalPrototype() {
   const [recurringReminders, setRecurringReminders] = useState([]);
   const [supplierPriceLists, setSupplierPriceLists] = useState([]);
   const [chemicalRecords, setChemicalRecords] = useState([]);
+  const [paddockEvents, setPaddockEvents] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -480,6 +482,7 @@ export default function AccountingPortalPrototype() {
     setRecurringReminders([]);
     setSupplierPriceLists([]);
     setChemicalRecords([]);
+    setPaddockEvents([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -886,7 +889,7 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
@@ -894,6 +897,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.recurringReminders),
         safeF(SUPABASE_TABLES.supplierPriceLists),
         safeF(SUPABASE_TABLES.chemicalRecords),
+        safeF(SUPABASE_TABLES.paddockEvents),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -914,6 +918,7 @@ export default function AccountingPortalPrototype() {
       setRecurringReminders(Array.isArray(rRecurringReminders) ? rRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(rSupplierPriceLists) ? rSupplierPriceLists : []);
       setChemicalRecords(Array.isArray(rChemicalRecords) ? rChemicalRecords : []);
+      setPaddockEvents(Array.isArray(rPaddockEvents) ? rPaddockEvents : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1413,6 +1418,112 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+  const readPendingPaddockEventQueue = () => {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(PADDOCK_EVENT_QUEUE_KEY);
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writePendingPaddockEventQueue = (items) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(PADDOCK_EVENT_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  };
+
+  const upsertPaddockEventInState = (items, nextItem) => {
+    const list = Array.isArray(items) ? items : [];
+    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
+    if (byId >= 0) {
+      const copy = [...list];
+      copy[byId] = nextItem;
+      return copy;
+    }
+    const byClientRef = nextItem?.clientRef
+      ? list.findIndex((row) => String(row.clientRef || "") === String(nextItem.clientRef || ""))
+      : -1;
+    if (byClientRef >= 0) {
+      const copy = [...list];
+      copy[byClientRef] = nextItem;
+      return copy;
+    }
+    return [...list, nextItem];
+  };
+
+  const flushPendingPaddockEventQueue = async () => {
+    const queue = readPendingPaddockEventQueue();
+    if (!queue.length) return;
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        const toSave = { ...item };
+        if (!isValidDbId(toSave.id)) delete toSave.id;
+        const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, toSave);
+        setPaddockEvents((prev) => upsertPaddockEventInState(prev, { ...saved, pendingSync: false }));
+      } catch (err) {
+        remaining.push(item);
+        if (!(String(err?.message || "").toLowerCase().includes("network"))) {
+          console.warn("Could not sync pending paddock event:", err?.message);
+        }
+      }
+    }
+    writePendingPaddockEventQueue(remaining);
+  };
+
+  const savePaddockEvent = async (payload, opts = {}) => {
+    const timestamp = new Date().toISOString();
+    const clientRef = payload?.clientRef || `paddock-event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const prepared = {
+      ...payload,
+      clientRef,
+      archived: Boolean(payload?.archived),
+      updatedAt: timestamp,
+    };
+    try {
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.paddockEvents, prepared);
+      setPaddockEvents((prev) => upsertPaddockEventInState(prev, { ...saved, pendingSync: false }));
+      if (!opts.silent) {
+        toast.success(payload?.id ? "Paddock history updated!" : "Paddock history event logged!");
+      }
+      return { ...saved, pendingSync: false };
+    } catch (err) {
+      const offlineFallback = {
+        ...prepared,
+        id: prepared.id || `offline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        pendingSync: true,
+      };
+      setPaddockEvents((prev) => upsertPaddockEventInState(prev, offlineFallback));
+      const queue = readPendingPaddockEventQueue();
+      writePendingPaddockEventQueue(upsertPaddockEventInState(queue, offlineFallback));
+      if (!opts.silent) {
+        toast.success("Saved offline. Will sync when back online.");
+      }
+      return offlineFallback;
+    }
+  };
+
+  const archivePaddockEvent = async (id) => {
+    try {
+      const existing = paddockEvents.find((row) => String(row.id) === String(id));
+      if (!existing) return false;
+      const next = {
+        ...existing,
+        archived: true,
+        archivedAt: new Date().toISOString(),
+      };
+      const saved = await savePaddockEvent(next, { silent: true });
+      if (!saved) return false;
+      toast.success("Paddock event archived");
+      return true;
+    } catch (err) {
+      toast.error(err.message || "Failed to archive paddock event");
+      return false;
+    }
+  };
+
   const sendRecurringReminderNow = async (reminderId) => {
     try {
       const { data, error } = await supabase.functions.invoke("send-recurring-reminders", {
@@ -1565,6 +1676,7 @@ export default function AccountingPortalPrototype() {
       setRecurringReminders([]);
       setSupplierPriceLists([]);
       setChemicalRecords([]);
+      setPaddockEvents([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -2088,6 +2200,7 @@ export default function AccountingPortalPrototype() {
         { name: "recurring reminders", items: recurringReminders, table: SUPABASE_TABLES.recurringReminders },
         { name: "supplier price lists", items: supplierPriceLists, table: SUPABASE_TABLES.supplierPriceLists },
         { name: "chemical records", items: chemicalRecords, table: SUPABASE_TABLES.chemicalRecords },
+        { name: "paddock events", items: paddockEvents, table: SUPABASE_TABLES.paddockEvents },
       ];
 
       const saveResults = await Promise.all(
@@ -2141,6 +2254,7 @@ export default function AccountingPortalPrototype() {
         remoteRecurringReminders,
         remoteSupplierPriceLists,
         remoteChemicalRecords,
+        remotePaddockEvents,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2157,6 +2271,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.recurringReminders),
         safeF(SUPABASE_TABLES.supplierPriceLists),
         safeF(SUPABASE_TABLES.chemicalRecords),
+        safeF(SUPABASE_TABLES.paddockEvents),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2203,6 +2318,13 @@ export default function AccountingPortalPrototype() {
       setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(remoteSupplierPriceLists) ? remoteSupplierPriceLists : []);
       setChemicalRecords(Array.isArray(remoteChemicalRecords) ? remoteChemicalRecords : []);
+      const pendingOfflinePaddockEvents = readPendingPaddockEventQueue();
+      const hydratedPaddockEvents = Array.isArray(remotePaddockEvents) ? remotePaddockEvents : [];
+      const mergedPaddockEvents = pendingOfflinePaddockEvents.reduce(
+        (acc, item) => upsertPaddockEventInState(acc, item),
+        hydratedPaddockEvents
+      );
+      setPaddockEvents(mergedPaddockEvents);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2246,6 +2368,7 @@ export default function AccountingPortalPrototype() {
       setShowBackOnline(true);
       // Auto-resync data when coming back online
       if (authUser && hasHydratedSupabaseState.current) {
+        flushPendingPaddockEventQueue();
         restorePortalStateFromSupabase();
       }
       setTimeout(() => setShowBackOnline(false), 4000);
@@ -2282,6 +2405,7 @@ export default function AccountingPortalPrototype() {
       sas_recurring_reminders: { setter: setRecurringReminders, key: "scheduling" },
       sas_supplier_price_lists: { setter: setSupplierPriceLists, key: "settings" },
       sas_chemical_records: { setter: setChemicalRecords, key: "chemical records" },
+      sas_paddock_events: { setter: setPaddockEvents, key: "properties" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2364,6 +2488,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_recurring_reminders", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_supplier_price_lists", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_chemical_records", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_paddock_events", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5328,6 +5453,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             {activePage === "properties" && <PropertiesPage
               properties={properties} clients={clients}
               chemicalRecords={chemicalRecords}
+              paddockEvents={paddockEvents}
               colours={colours} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
               inputStyle={inputStyle} labelStyle={labelStyle}
@@ -5335,7 +5461,10 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
               SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
               saveProperty={saveProperty} deleteProperty={deleteProperty} confirm={confirm}
-               setActivePage={setActivePage} jobs={jobs}
+              savePaddockEvent={savePaddockEvent}
+              archivePaddockEvent={archivePaddockEvent}
+              setActivePage={setActivePage} jobs={jobs}
+              formatDateAU={formatDateAU}
             />}
             {activePage === "chemical records" && <ChemicalRecordsPage
               profile={profile}

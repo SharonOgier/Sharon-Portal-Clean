@@ -260,6 +260,7 @@ export const SUPABASE_TABLES = {
   recurringReminders: "sas_recurring_reminders",
   supplierPriceLists: "sas_supplier_price_lists",
   chemicalRecords: "sas_chemical_records",
+  paddockEvents: "sas_paddock_events",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
