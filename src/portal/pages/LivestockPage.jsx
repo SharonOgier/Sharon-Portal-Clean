@@ -8,11 +8,11 @@ const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const addDays = (d, days) => { const x = new Date(d); if (Number.isNaN(x.getTime())) return ""; x.setDate(x.getDate() + Math.max(0, n(days))); return x.toISOString().slice(0, 10); };
 
 export default function LivestockPage(props) {
-  const { livestockRecords = [], properties = [], chemicalRecords = [], colours, buttonPrimary, buttonSecondary, inputStyle, labelStyle, DashboardHero, InsightChip, MetricCard, SectionCard, DataTable, saveLivestockRecord = async () => null, archiveLivestockRecord = async () => false, formatDateAU = (v) => v || "", confirm = ({ onConfirm }) => onConfirm && onConfirm() } = props;
+  const { livestockRecords = [], mobCosts = [], properties = [], chemicalRecords = [], colours, buttonPrimary, buttonSecondary, inputStyle, labelStyle, DashboardHero, InsightChip, MetricCard, SectionCard, DataTable, saveLivestockRecord = async () => null, archiveLivestockRecord = async () => false, upsertRecord = async () => null, deleteRecord = async () => null, formatDateAU = (v) => v || "", confirm = ({ onConfirm }) => onConfirm && onConfirm() } = props;
   const [mode, setMode] = useState("");
   const [targetWeight, setTargetWeight] = useState("520");
   const [selectedMobId, setSelectedMobId] = useState("");
-  const [f, setF] = useState({ date: todayIso(), kind: "", mobId: "", mobName: "", breed: "", category: "Breeders", headCount: "", fromPaddockId: "", toPaddockId: "", earTag: "", treatmentType: "Vaccination", productUsed: "", dose: "", withholdingDays: "", operator: "", avgWeight: "", bodyConditionScore: "3", weight: "", pricePerKg: "", buyer: "", costPerHead: "", vendor: "", originProperty: "", calvesBorn: "", losses: "", target: "new", notes: "" });
+  const [f, setF] = useState({ date: todayIso(), kind: "", mobId: "", mobName: "", breed: "", category: "Breeders", headCount: "", fromPaddockId: "", toPaddockId: "", earTag: "", treatmentType: "Vaccination", productUsed: "", dose: "", withholdingDays: "", operator: "", avgWeight: "", bodyConditionScore: "3", weight: "", pricePerKg: "", buyer: "", costPerHead: "", vendor: "", originProperty: "", calvesBorn: "", losses: "", target: "new", amount: "", notes: "" });
 
   const paddocks = useMemo(() => {
     const list = [];
@@ -43,6 +43,10 @@ export default function LivestockPage(props) {
   }, [asc]);
   const selectedMob = useMemo(() => mobs.find((m) => String(m.mobId) === String(selectedMobId)) || mobs[0] || null, [mobs, selectedMobId]);
   const mobHistory = useMemo(() => selectedMob ? [...active].filter((r) => String(r.mobId || r.id) === String(selectedMob.mobId)).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))) : [], [active, selectedMob]);
+  const mobCostsForSelected = useMemo(() => {
+    if (!selectedMob) return [];
+    return mobCosts.filter(c => String(c.mobId) === String(selectedMob.mobId)).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }, [mobCosts, selectedMob]);
   const totalHead = useMemo(() => mobs.reduce((s, m) => s + n(m.headCount), 0), [mobs]);
   const locked = useMemo(() => mobs.filter((m) => String(m.withholdingUntil || "") >= todayIso()), [mobs]);
   const wt = useMemo(() => {
@@ -68,7 +72,36 @@ export default function LivestockPage(props) {
     }
     if (mode === "treatment") { const mob = mobs.find((m) => String(m.mobId) === String(f.mobId)); if (!mob) return; await save({ ...f, kind: "treatment", mobName: mob.mobName, withholdingDays: n(f.withholdingDays), withholdingEndDate: addDays(f.date, f.withholdingDays) }); setMode(""); return; }
     if (mode === "weight") { const mob = mobs.find((m) => String(m.mobId) === String(f.mobId)); if (!mob) return; await save({ ...f, kind: "weight", mobName: mob.mobName, avgWeight: n(f.avgWeight), bodyConditionScore: n(f.bodyConditionScore) }); setMode(""); return; }
-    if (mode === "sale") { const mob = mobs.find((m) => String(m.mobId) === String(f.mobId)); if (!mob) return; const u = lockUntil(mob.mobId, f.date); if (u) { alert(`Sale blocked until ${u}.`); return; } await save({ ...f, kind: "sale", mobName: mob.mobName, headCount: n(f.headCount), totalValue: n(f.weight) * n(f.pricePerKg) }); setMode(""); return; }
+    if (mode === "sale") {
+      const mob = mobs.find((m) => String(m.mobId) === String(f.mobId));
+      if (!mob) return;
+      const u = lockUntil(mob.mobId, f.date);
+      if (u) { alert(`Sale blocked until ${u}.`); return; }
+      await save({
+        ...f,
+        kind: "sale",
+        mobName: mob.mobName,
+        headCount: n(f.headCount),
+        totalValue: n(f.weight) * n(f.pricePerKg),
+        paddockId: mob.currentPaddockId || ""
+      });
+      setMode("");
+      return;
+    }
+    if (mode === "cost") {
+      const mob = mobs.find((m) => String(m.mobId) === String(f.mobId));
+      if (!mob) return;
+      await upsertRecord("sas_mob_costs", {
+        mobId: mob.mobId,
+        mobName: mob.mobName,
+        date: f.date,
+        category: f.category,
+        amount: n(f.amount),
+        notes: f.notes
+      });
+      setMode("");
+      return;
+    }
     if (mode === "purchase") {
       let mobId = f.mobId, mobName = ""; if (f.target === "new") { const created = await save({ kind: "mob_create", date: f.date, mobId: `mob-${Date.now()}`, mobName: f.mobName || `Mob ${Date.now()}`, breed: f.breed, category: f.category, headCount: n(f.headCount) }); if (!created) return; mobId = String(created.mobId || created.id); mobName = created.mobName; } else mobName = mobs.find((m) => String(m.mobId) === String(f.mobId))?.mobName || "";
       await save({ ...f, kind: "purchase", mobId, mobName, headCount: n(f.headCount), totalCost: n(f.headCount) * n(f.costPerHead) }); setMode(""); return;
@@ -79,14 +112,28 @@ export default function LivestockPage(props) {
   const label = (r) => ({ mob_create: `Mob created (${r.mobName})`, movement: `Move ${paddockMap.get(r.fromPaddockId || "")?.name || "Unknown"} -> ${paddockMap.get(r.toPaddockId || "")?.name || "Unknown"}`, treatment: `${r.treatmentType || "Treatment"} (${r.productUsed || "Product"})`, weight: `Weight ${n(r.avgWeight)}kg | BCS ${n(r.bodyConditionScore)}/5`, sale: `Sale ${n(r.headCount)} head`, purchase: `Purchase ${n(r.headCount)} head`, calving: `Calving born ${n(r.calvesBorn)} losses ${n(r.losses)}` }[r.kind] || r.kind);
   const exportPdf = () => { const rows = mobHistory.map((r) => `<tr><td>${r.date || ""}</td><td>${label(r)}</td><td>${r.notes || ""}</td></tr>`).join(""); const w = window.open("", "_blank"); if (!w) return; w.document.write(`<!doctype html><html><body style="font-family:Arial;padding:24px"><h1>NLIS Livestock History</h1><p><b>Mob:</b> ${selectedMob?.mobName || "All"}</p><table border="1" cellspacing="0" cellpadding="6"><tr><th>Date</th><th>Activity</th><th>Notes</th></tr>${rows}</table></body></html>`); w.document.close(); w.print(); };
   const archive = (r) => confirm({ title: "Archive record?", message: "Livestock records are permanent and can only be archived.", confirmLabel: "Archive", onConfirm: () => archiveLivestockRecord(r.id) });
+  const removeCost = (id) => confirm({ title: "Delete cost?", message: "This will permanently remove the cost record.", confirmLabel: "Delete", onConfirm: () => deleteRecord("sas_mob_costs", id) });
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <DashboardHero title="Livestock" subtitle="Australian mob records for NLIS compliance, movements, treatments, weights, sales, purchases and calving." highlight={String(mobs.length)}><InsightChip label="Total head" value={String(totalHead)} /><InsightChip label="Withholding locks" value={String(locked.length)} /></DashboardHero>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}><MetricCard title="Mobs" value={String(mobs.length)} subtitle="Cattle mobs" accent={colours.purple} /><MetricCard title="Head count" value={String(totalHead)} subtitle="Total head" accent={colours.teal} /><MetricCard title="Active withholding" value={String(locked.length)} subtitle="Sale/slaughter locks" accent="#B45309" /></div>
       <SectionCard title="Mob Management" right={<button style={buttonPrimary} onClick={() => open("mob_create")}>+ New Mob</button>}><DataTable columns={[{ key: "mobName", label: "Mob" }, { key: "category", label: "Category" }, { key: "breed", label: "Breed" }, { key: "headCount", label: "Head" }, { key: "loc", label: "Current paddock", render: (_v, r) => paddockMap.get(r.currentPaddockId || "")?.name || "Unassigned" }, { key: "wh", label: "Withholding", render: (_v, r) => r.withholdingUntil && r.withholdingUntil >= todayIso() ? `Active until ${formatDateAU(r.withholdingUntil)}` : "Clear" }]} rows={mobs} emptyState={{ icon: "🐄", title: "No mobs yet", message: "Create a mob to begin." }} /></SectionCard>
-      <SectionCard title="Operations"><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button style={buttonSecondary} onClick={() => open("movement")}>Record Movement</button><button style={buttonSecondary} onClick={() => open("treatment")}>Log Treatment</button><button style={buttonSecondary} onClick={() => open("weight")}>Log Weight & BCS</button><button style={buttonSecondary} onClick={() => open("sale")}>Record Sale</button><button style={buttonSecondary} onClick={() => open("purchase")}>Record Purchase</button><button style={buttonSecondary} onClick={() => open("calving")}>Record Calving</button></div></SectionCard>
+      <SectionCard title="Operations"><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button style={buttonSecondary} onClick={() => open("movement")}>Record Movement</button><button style={buttonSecondary} onClick={() => open("treatment")}>Log Treatment</button><button style={buttonSecondary} onClick={() => open("weight")}>Log Weight & BCS</button><button style={buttonSecondary} onClick={() => open("sale")}>Record Sale</button><button style={buttonSecondary} onClick={() => open("purchase")}>Record Purchase</button><button style={buttonSecondary} onClick={() => open("calving")}>Record Calving</button><button style={buttonSecondary} onClick={() => open("cost")}>Record Mob Cost</button></div></SectionCard>
       <SectionCard title="Mob History" right={<div style={{ display: "flex", gap: 8 }}><button style={buttonSecondary} onClick={() => exportToCSV(mobHistory, [{ key: "date", label: "Date" }, { key: "kind", label: "Type" }, { key: "mobName", label: "Mob" }, { key: "notes", label: "Notes" }], "livestock_history")}>CSV</button><button style={buttonSecondary} onClick={exportPdf}>PDF</button></div>}><div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}><label style={labelStyle}>Mob</label><select style={{ ...inputStyle, maxWidth: 280 }} value={selectedMob?.mobId || ""} onChange={(e) => setSelectedMobId(e.target.value)}>{mobs.map((m) => <option key={m.mobId} value={m.mobId}>{m.mobName}</option>)}</select></div><DataTable columns={[{ key: "date", label: "Date", render: (v) => formatDateAU(v) }, { key: "kind", label: "Activity", render: (_v, r) => label(r) }, { key: "notes", label: "Notes", render: (v) => v || "—" }, { key: "a", label: "", render: (_v, r) => <button style={{ ...buttonSecondary, color: "#B91C1C" }} onClick={() => archive(r)}>Archive</button> }]} rows={mobHistory} emptyState={{ icon: "📘", title: "No history", message: "No records for this mob yet." }} /></SectionCard>
+      <SectionCard title="Mob Costs" right={<div style={{ fontSize: 12, color: colours.muted }}>Total costs: {selectedMob ? n(mobCostsForSelected.reduce((s, c) => s + n(c.amount), 0)).toLocaleString("en-AU", { style: "currency", currency: "AUD" }) : "$0.00"}</div>}>
+        <DataTable
+          columns={[
+            { key: "date", label: "Date", render: (v) => formatDateAU(v) },
+            { key: "category", label: "Category", render: (v) => <span style={{ textTransform: "capitalize" }}>{v}</span> },
+            { key: "amount", label: "Amount", render: (v) => n(v).toLocaleString("en-AU", { style: "currency", currency: "AUD" }) },
+            { key: "notes", label: "Notes" },
+            { key: "actions", label: "", render: (_, row) => <button style={{ ...buttonSecondary, color: "#B91C1C" }} onClick={() => removeCost(row.id)}>Delete</button> }
+          ]}
+          rows={mobCostsForSelected}
+          emptyState={{ icon: "💸", title: "No costs recorded", message: "Record costs for this mob to track profitability." }}
+        />
+      </SectionCard>
       <SectionCard title="Weights & Condition"><div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}><label style={labelStyle}>Target weight (kg)</label><input style={{ ...inputStyle, maxWidth: 140 }} type="number" value={targetWeight} onChange={(e) => setTargetWeight(e.target.value)} /><div style={{ fontSize: 12, color: colours.muted }}>Gain: <strong>{wt.gain.toFixed(2)}kg/day</strong>{wt.daysToTarget ? ` | est. ${wt.daysToTarget} days to target` : ""}</div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(40px,1fr))", gap: 6, alignItems: "end", minHeight: 110 }}>{(wt.series || []).map((p, i, arr) => { const max = Math.max(...arr.map((x) => n(x.avgWeight)), 1); const h = Math.max(4, (n(p.avgWeight) / max) * 100); return <div key={`${p.date}-${i}`} style={{ display: "grid", gap: 4, justifyItems: "center" }}><div style={{ width: "100%", height: 80, background: "#E2E8F0", borderRadius: 6, display: "flex", alignItems: "end" }}><div style={{ width: "100%", height: `${h}%`, background: "#0F766E", borderRadius: 6 }} /></div><div style={{ fontSize: 10 }}>{String(p.date || "").slice(5)}</div></div>; })}</div></SectionCard>
 
       {mode && <SectionCard title={`Add ${mode.replace("_", " ")}`}><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
@@ -99,6 +146,28 @@ export default function LivestockPage(props) {
         {mode === "sale" && <><div><label style={labelStyle}>Head</label><input type="number" style={inputStyle} value={f.headCount} onChange={(e) => setF((p) => ({ ...p, headCount: e.target.value }))} /></div><div><label style={labelStyle}>Weight (kg)</label><input type="number" style={inputStyle} value={f.weight} onChange={(e) => setF((p) => ({ ...p, weight: e.target.value }))} /></div><div><label style={labelStyle}>Price per kg</label><input type="number" step="0.01" style={inputStyle} value={f.pricePerKg} onChange={(e) => setF((p) => ({ ...p, pricePerKg: e.target.value }))} /></div><div><label style={labelStyle}>Buyer</label><input style={inputStyle} value={f.buyer} onChange={(e) => setF((p) => ({ ...p, buyer: e.target.value }))} /></div></>}
         {mode === "purchase" && <><div><label style={labelStyle}>Apply to</label><select style={inputStyle} value={f.target} onChange={(e) => setF((p) => ({ ...p, target: e.target.value }))}><option value="new">Create mob</option><option value="existing">Existing mob</option></select></div>{f.target === "existing" ? <div><label style={labelStyle}>Mob</label><select style={inputStyle} value={f.mobId} onChange={(e) => setF((p) => ({ ...p, mobId: e.target.value }))}><option value="">Select mob</option>{mobs.map((m) => <option key={m.mobId} value={m.mobId}>{m.mobName}</option>)}</select></div> : <div><label style={labelStyle}>New mob name</label><input style={inputStyle} value={f.mobName} onChange={(e) => setF((p) => ({ ...p, mobName: e.target.value }))} /></div>}<div><label style={labelStyle}>Breed</label><input style={inputStyle} value={f.breed} onChange={(e) => setF((p) => ({ ...p, breed: e.target.value }))} /></div><div><label style={labelStyle}>Category</label><select style={inputStyle} value={f.category} onChange={(e) => setF((p) => ({ ...p, category: e.target.value }))}>{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</select></div><div><label style={labelStyle}>Head</label><input type="number" style={inputStyle} value={f.headCount} onChange={(e) => setF((p) => ({ ...p, headCount: e.target.value }))} /></div><div><label style={labelStyle}>Cost/head</label><input type="number" step="0.01" style={inputStyle} value={f.costPerHead} onChange={(e) => setF((p) => ({ ...p, costPerHead: e.target.value }))} /></div><div><label style={labelStyle}>Vendor</label><input style={inputStyle} value={f.vendor} onChange={(e) => setF((p) => ({ ...p, vendor: e.target.value }))} /></div><div><label style={labelStyle}>Origin property</label><input style={inputStyle} value={f.originProperty} onChange={(e) => setF((p) => ({ ...p, originProperty: e.target.value }))} /></div></>}
         {mode === "calving" && <><div><label style={labelStyle}>Calves born</label><input type="number" style={inputStyle} value={f.calvesBorn} onChange={(e) => setF((p) => ({ ...p, calvesBorn: e.target.value }))} /></div><div><label style={labelStyle}>Losses</label><input type="number" style={inputStyle} value={f.losses} onChange={(e) => setF((p) => ({ ...p, losses: e.target.value }))} /></div></>}
+        {mode === "cost" && (
+          <>
+            <div>
+              <label style={labelStyle}>Category</label>
+              <select style={inputStyle} value={f.category} onChange={(e) => setF((p) => ({ ...p, category: e.target.value }))}>
+                <option value="feed">Feed</option>
+                <option value="animal health">Animal Health</option>
+                <option value="transport">Transport</option>
+                <option value="labour">Labour</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Amount ($)</label>
+              <input type="number" step="0.01" style={inputStyle} value={f.amount} onChange={(e) => setF((p) => ({ ...p, amount: e.target.value }))} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelStyle}>Notes</label>
+              <textarea style={{ ...inputStyle, minHeight: 60 }} value={f.notes} onChange={(e) => setF((p) => ({ ...p, notes: e.target.value }))} />
+            </div>
+          </>
+        )}
       </div><div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}><button style={buttonSecondary} onClick={() => setMode("")}>Cancel</button><button style={buttonPrimary} onClick={submit}>Save</button></div></SectionCard>}
     </div>
   );

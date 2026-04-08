@@ -209,15 +209,17 @@ function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, car
 // ---------------------------------------------------------------------------
 // PROPERTY DETAIL VIEW
 // ---------------------------------------------------------------------------
-function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemicalRecords = [], paddockEvents = [], savePaddockEvent, archivePaddockEvent, colours, cardStyle, buttonPrimary, buttonSecondary, inputStyle, labelStyle, setActivePage, formatDateAU = (v) => v || "" }) {
+function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemicalRecords = [], paddockEvents = [], paddockCosts = [], savePaddockEvent, archivePaddockEvent, upsertRecord, deleteRecord, colours, cardStyle, buttonPrimary, buttonSecondary, inputStyle, labelStyle, setActivePage, formatDateAU = (v) => v || "" }) {
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showRainModal, setShowRainModal] = useState(false);
   const [showPastureModal, setShowPastureModal] = useState(false);
   const [showSpellingModal, setShowSpellingModal] = useState(false);
+  const [showCostModal, setShowCostModal] = useState(false);
   const [moveForm, setMoveForm] = useState({ date: todayIso(), mobName: "", headCount: "", destination: "" });
   const [rainForm, setRainForm] = useState({ date: todayIso(), millimetres: "", notes: "" });
   const [pastureForm, setPastureForm] = useState({ date: todayIso(), score: "3", notes: "" });
   const [spellingForm, setSpellingForm] = useState({ startDate: todayIso(), durationDays: "", notes: "" });
+  const [costForm, setCostForm] = useState({ date: todayIso(), category: "feed", amount: "", notes: "" });
 
   const activePaddockEvents = useMemo(() => sortByDateDesc((paddockEvents || []).filter((event) => (
     !event.archived && String(event.propertyId || "") === String(property.id) && String(event.subLocationId || "") === String(paddock.id)
@@ -365,6 +367,28 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
     setSpellingForm({ startDate: todayIso(), durationDays: "", notes: "" });
   };
 
+  const submitCost = async () => {
+    if (!costForm.date || safeNumber(costForm.amount) <= 0) return;
+    await upsertRecord("sas_paddock_costs", {
+      propertyId: property.id,
+      paddockId: paddock.id,
+      date: costForm.date,
+      category: costForm.category,
+      amount: safeNumber(costForm.amount),
+      notes: costForm.notes
+    });
+    setShowCostModal(false);
+    setCostForm({ date: todayIso(), category: "feed", amount: "", notes: "" });
+  };
+
+  const removeCost = (id) => {
+    if (deleteRecord) deleteRecord("sas_paddock_costs", id);
+  };
+
+  const activePaddockCosts = useMemo(() => {
+    return paddockCosts.filter(c => String(c.paddockId) === String(paddock.id)).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }, [paddockCosts, paddock.id]);
+
   const exportTimelinePdf = () => {
     const rows = timeline.map((item) => `<tr><td>${item.date || ""}</td><td>${item.title || ""}</td><td>${item.notes || ""}</td></tr>`).join("");
     const w = window.open("", "_blank");
@@ -404,6 +428,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
         <button style={buttonSecondary} onClick={() => setShowRainModal(true)}>Log Rainfall</button>
         <button style={buttonSecondary} onClick={() => setShowPastureModal(true)}>Log Pasture Assessment</button>
         <button style={buttonSecondary} onClick={() => setShowSpellingModal(true)}>Log Spelling Period</button>
+        <button style={buttonSecondary} onClick={() => setShowCostModal(true)}>Record Cost</button>
         <button style={buttonSecondary} onClick={exportTimelinePdf}>Export Paddock History PDF</button>
       </div>
 
@@ -421,6 +446,21 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
             );
           })}
         </div>
+      </div>
+
+      <div style={{ ...cardStyle, padding: 14, border: `1px solid ${colours.border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>Paddock Costs</div>
+        <DataTable
+          columns={[
+            { key: "date", label: "Date", render: (v) => formatDateAU(v) },
+            { key: "category", label: "Category", render: (v) => <span style={{ textTransform: "capitalize" }}>{v}</span> },
+            { key: "amount", label: "Amount", render: (v) => safeNumber(v).toLocaleString("en-AU", { style: "currency", currency: "AUD" }) },
+            { key: "notes", label: "Notes" },
+            { key: "actions", label: "", render: (_, row) => <button style={{ ...buttonSecondary, color: "#B91C1C", fontSize: 11, padding: "4px 8px" }} onClick={() => removeCost(row.id)}>Delete</button> }
+          ]}
+          rows={activePaddockCosts}
+          emptyState={{ icon: "💸", title: "No costs recorded", message: "Record costs for this paddock to track profitability." }}
+        />
       </div>
 
       <div style={{ ...cardStyle, padding: 14, border: `1px solid ${colours.border}` }}>
@@ -445,7 +485,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
         )}
       </div>
 
-      {(showMoveModal || showRainModal || showPastureModal || showSpellingModal) && (
+      {(showMoveModal || showRainModal || showPastureModal || showSpellingModal || showCostModal) && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", zIndex: 60, padding: 16 }}>
           <div style={{ ...cardStyle, width: "min(680px, 96vw)", maxHeight: "90vh", overflow: "auto", padding: 16, background: "#fff" }}>
             {showMoveModal && (
@@ -495,6 +535,28 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button style={buttonSecondary} onClick={() => setShowSpellingModal(false)}>Cancel</button><button style={buttonPrimary} onClick={submitSpelling}>Save spelling</button></div>
               </div>
             )}
+            {showCostModal && (
+              <div style={{ display: "grid", gap: 10 }}>
+                <h4 style={{ margin: 0, fontSize: 18 }}>Record Paddock Cost</h4>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+                  <div><label style={labelStyle}>Date</label><input type="date" style={inputStyle} value={costForm.date} onChange={(e) => setCostForm((p) => ({ ...p, date: e.target.value }))} /></div>
+                  <div>
+                    <label style={labelStyle}>Category</label>
+                    <select style={inputStyle} value={costForm.category} onChange={(e) => setCostForm((p) => ({ ...p, category: e.target.value }))}>
+                      <option value="fuel">Fuel</option>
+                      <option value="labour">Labour</option>
+                      <option value="chemical">Chemical</option>
+                      <option value="feed">Feed</option>
+                      <option value="repairs">Repairs</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div><label style={labelStyle}>Amount ($)</label><input type="number" step="0.01" style={inputStyle} value={costForm.amount} onChange={(e) => setCostForm((p) => ({ ...p, amount: e.target.value }))} /></div>
+                  <div style={{ gridColumn: "1 / -1" }}><label style={labelStyle}>Notes</label><textarea style={{ ...inputStyle, minHeight: 70 }} value={costForm.notes} onChange={(e) => setCostForm((p) => ({ ...p, notes: e.target.value }))} /></div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><button style={buttonSecondary} onClick={() => setShowCostModal(false)}>Cancel</button><button style={buttonPrimary} onClick={submitCost}>Save cost</button></div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -502,7 +564,7 @@ function PaddockPanel({ property, paddock, allProperties = [], jobs = [], chemic
   );
 }
 
-function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary, buttonPrimary, inputStyle, labelStyle, setActivePage, jobs = [], chemicalRecords = [], paddockEvents = [], savePaddockEvent, archivePaddockEvent, allProperties = [], formatDateAU = (v) => v || "" }) {
+function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary, buttonPrimary, inputStyle, labelStyle, setActivePage, jobs = [], chemicalRecords = [], paddockEvents = [], paddockCosts = [], savePaddockEvent, archivePaddockEvent, upsertRecord, deleteRecord, allProperties = [], formatDateAU = (v) => v || "" }) {
   const client = clients.find(c => String(c.id) === String(property.clientId));
   const subs = (property.subLocations || []).map(normaliseSubLocation);
   const hasCoords = property.gpsLat && property.gpsLng;
@@ -565,8 +627,11 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
           jobs={jobs}
           chemicalRecords={chemicalRecords}
           paddockEvents={paddockEvents}
+          paddockCosts={paddockCosts}
           savePaddockEvent={savePaddockEvent}
           archivePaddockEvent={archivePaddockEvent}
+          upsertRecord={upsertRecord}
+          deleteRecord={deleteRecord}
           colours={colours}
           cardStyle={cardStyle}
           buttonPrimary={buttonPrimary}
@@ -798,8 +863,11 @@ export default function PropertiesPage(props) {
             jobs={jobs}
             chemicalRecords={chemicalRecords}
             paddockEvents={paddockEvents}
+            paddockCosts={props.paddockCosts}
             savePaddockEvent={savePaddockEvent}
             archivePaddockEvent={archivePaddockEvent}
+            upsertRecord={props.upsertRecord}
+            deleteRecord={props.deleteRecord}
             allProperties={properties}
             formatDateAU={formatDateAU}
           />
