@@ -631,7 +631,7 @@ const calcNextDate = (fromDate, freq) => {
 };
 
 export default function SchedulingPage({
-  jobs = [], clients = [], properties = [], recurringReminders = [], quotes = [], invoices = [], colours: c, cardStyle, buttonPrimary, buttonSecondary,
+  jobs = [], clients = [], properties = [], recurringReminders = [], seasonalTasks = [], quotes = [], invoices = [], colours: c, cardStyle, buttonPrimary, buttonSecondary,
   inputStyle, labelStyle, DashboardHero, InsightChip, MetricCard, SectionCard, DataTable, EmptyState,
   saveJob, deleteJob, confirm, setActivePage, currency = (v) => `$${Number(v||0).toFixed(2)}`,
   authUser, profile = {}, createInvoiceFromJob,
@@ -833,6 +833,14 @@ export default function SchedulingPage({
     return [...(Array.isArray(recurringReminders) ? recurringReminders : [])]
       .sort((a, b) => String(a.nextDueDate || "").localeCompare(String(b.nextDueDate || "")));
   }, [recurringReminders]);
+
+  /* ── seasonal tasks ──────────────────────────────────────── */
+  const seasonalJobSuggestions = useMemo(() => {
+    const currentMonth = viewDate.getMonth();
+    return seasonalTasks
+      .filter(t => !t.paused && (t.months || []).includes(currentMonth))
+      .filter(t => !jobs.some(j => j.seasonalTaskId === t.id && j.startDate.startsWith(`${viewDate.getFullYear()}-${pad(currentMonth+1)}`)));
+  }, [seasonalTasks, jobs, viewDate]);
 
   /* ── filter + search ─────────────────────────────────────── */
   const filtered = useMemo(() => {
@@ -1233,6 +1241,38 @@ export default function SchedulingPage({
         <InsightChip label="In Progress" value={stats.inProgress} />
         <InsightChip label="Completed" value={stats.completed} />
       </DashboardHero>
+
+      {/* Seasonal Task Banner */}
+      {seasonalJobSuggestions.length > 0 && view === "month" && (
+        <div style={{ ...cardStyle, background: "linear-gradient(135deg, #F5ECFB 0%, #E7F6F5 100%)", padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 24 }}>🗓️</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: colours.purple }}>Seasonal Tasks for {MONTHS[viewDate.getMonth()]}</div>
+            <div style={{ fontSize: 13, color: colours.muted }}>You have {seasonalJobSuggestions.length} recurring tasks suggested for this month.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {seasonalJobSuggestions.slice(0, 2).map(t => (
+              <button key={t.id} onClick={() => {
+                setForm({
+                  ...blankJob,
+                  title: t.name,
+                  description: t.notes,
+                  category: t.category,
+                  assignedTo: t.assignedTo,
+                  propertyId: t.linkedPaddock,
+                  seasonalTaskId: t.id,
+                  startDate: `${viewDate.getFullYear()}-${pad(viewDate.getMonth()+1)}-01`,
+                  endDate: `${viewDate.getFullYear()}-${pad(viewDate.getMonth()+1)}-01`,
+                });
+                setShowForm(true);
+              }} style={{ ...buttonSecondary, fontSize: 12, padding: "6px 12px", borderColor: colours.purple, color: colours.purple }}>
+                + Add {t.name}
+              </button>
+            ))}
+            <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 12px" }} onClick={() => setActivePage("seasonal planner")}>View All</button>
+          </div>
+        </div>
+      )}
 
       {/* Metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>

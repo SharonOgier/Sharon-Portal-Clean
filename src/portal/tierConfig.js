@@ -87,6 +87,8 @@ const STARTER_ALLOWED_PAGES = new Set([
   "documents",
   "chemical records",
   "livestock",
+  "machinery",
+  "seasonal planner",
   "settings",
 ]);
 
