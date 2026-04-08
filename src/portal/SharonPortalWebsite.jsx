@@ -95,6 +95,7 @@ import BillsPage            from "./pages/BillsPage";
 import ExpensesPage         from "./pages/ExpensesPage";
 import AssetsPage           from "./pages/AssetsPage";
 import PropertiesPage       from "./pages/PropertiesPage";
+import ChemicalRecordsPage  from "./pages/ChemicalRecordsPage";
 import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
 import IncomeSourcesPage    from "./pages/IncomeSourcesPage";
@@ -185,6 +186,7 @@ export default function AccountingPortalPrototype() {
   const [jobs, setJobs] = useState([]);
   const [recurringReminders, setRecurringReminders] = useState([]);
   const [supplierPriceLists, setSupplierPriceLists] = useState([]);
+  const [chemicalRecords, setChemicalRecords] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -477,6 +479,7 @@ export default function AccountingPortalPrototype() {
     setDocuments([]);
     setRecurringReminders([]);
     setSupplierPriceLists([]);
+    setChemicalRecords([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -883,13 +886,14 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
         safeF(SUPABASE_TABLES.assets), safeF(SUPABASE_TABLES.properties), safeF(SUPABASE_TABLES.jobs),
         safeF(SUPABASE_TABLES.recurringReminders),
         safeF(SUPABASE_TABLES.supplierPriceLists),
+        safeF(SUPABASE_TABLES.chemicalRecords),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -909,6 +913,7 @@ export default function AccountingPortalPrototype() {
       setJobs(Array.isArray(rJobs) ? rJobs : []);
       setRecurringReminders(Array.isArray(rRecurringReminders) ? rRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(rSupplierPriceLists) ? rSupplierPriceLists : []);
+      setChemicalRecords(Array.isArray(rChemicalRecords) ? rChemicalRecords : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1337,6 +1342,77 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+  const saveChemicalRecord = async (payload, opts = {}) => {
+    try {
+      const timestamp = new Date().toISOString();
+      const prepared = {
+        ...payload,
+        archived: Boolean(payload?.archived),
+        updatedAt: timestamp,
+      };
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.chemicalRecords, prepared);
+      setChemicalRecords((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists
+          ? prev.map((r) => (String(r.id) === String(saved.id) ? saved : r))
+          : [...prev, saved];
+      });
+
+      if (saved?.propertyId) {
+        const property = properties.find((p) => String(p.id) === String(saved.propertyId));
+        if (property) {
+          const nextSubLocations = (property.subLocations || []).map((sub) => {
+            if (String(sub.id) !== String(saved.subLocationId || "")) return sub;
+            const currentEnd = String(sub.withholdingEndDate || "");
+            const nextEnd = String(saved.withholdingEndDate || "");
+            return {
+              ...sub,
+              withholdingEndDate: nextEnd && nextEnd > currentEnd ? nextEnd : currentEnd,
+              lastChemicalRecordId: saved.id,
+            };
+          });
+          const currentPropertyEnd = String(property.withholdingEndDate || "");
+          const nextPropertyEnd = String(saved.withholdingEndDate || "");
+          const nextProperty = {
+            ...property,
+            withholdingEndDate: nextPropertyEnd && nextPropertyEnd > currentPropertyEnd ? nextPropertyEnd : currentPropertyEnd,
+            lastChemicalRecordId: saved.id,
+            subLocations: nextSubLocations,
+          };
+          const savedProperty = await upsertRecordInDatabase(SUPABASE_TABLES.properties, nextProperty);
+          setProperties((prev) => prev.map((p) => (String(p.id) === String(savedProperty.id) ? savedProperty : p)));
+        }
+      }
+
+      if (!opts.silent) {
+        toast.success(payload?.id ? "Chemical record updated!" : "Chemical record saved!");
+      }
+      return saved;
+    } catch (err) {
+      toast.error(err.message || "Failed to save chemical record");
+      return null;
+    }
+  };
+
+  const archiveChemicalRecord = async (id) => {
+    try {
+      const existing = chemicalRecords.find((r) => String(r.id) === String(id));
+      if (!existing) return false;
+      const archived = {
+        ...existing,
+        archived: true,
+        archivedAt: new Date().toISOString(),
+      };
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.chemicalRecords, archived);
+      setChemicalRecords((prev) => prev.map((r) => (String(r.id) === String(saved.id) ? saved : r)));
+      toast.success("Chemical record archived");
+      return true;
+    } catch (err) {
+      toast.error(err.message || "Failed to archive chemical record");
+      return false;
+    }
+  };
+
   const sendRecurringReminderNow = async (reminderId) => {
     try {
       const { data, error } = await supabase.functions.invoke("send-recurring-reminders", {
@@ -1488,6 +1564,7 @@ export default function AccountingPortalPrototype() {
       setDocuments([]);
       setRecurringReminders([]);
       setSupplierPriceLists([]);
+      setChemicalRecords([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -2010,6 +2087,7 @@ export default function AccountingPortalPrototype() {
         { name: "suppliers",     items: suppliers,     table: SUPABASE_TABLES.suppliers },
         { name: "recurring reminders", items: recurringReminders, table: SUPABASE_TABLES.recurringReminders },
         { name: "supplier price lists", items: supplierPriceLists, table: SUPABASE_TABLES.supplierPriceLists },
+        { name: "chemical records", items: chemicalRecords, table: SUPABASE_TABLES.chemicalRecords },
       ];
 
       const saveResults = await Promise.all(
@@ -2062,6 +2140,7 @@ export default function AccountingPortalPrototype() {
         remoteJobs,
         remoteRecurringReminders,
         remoteSupplierPriceLists,
+        remoteChemicalRecords,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2077,6 +2156,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.jobs),
         safeF(SUPABASE_TABLES.recurringReminders),
         safeF(SUPABASE_TABLES.supplierPriceLists),
+        safeF(SUPABASE_TABLES.chemicalRecords),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2122,6 +2202,7 @@ export default function AccountingPortalPrototype() {
       setJobs(Array.isArray(remoteJobs) ? remoteJobs : []);
       setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(remoteSupplierPriceLists) ? remoteSupplierPriceLists : []);
+      setChemicalRecords(Array.isArray(remoteChemicalRecords) ? remoteChemicalRecords : []);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2200,6 +2281,7 @@ export default function AccountingPortalPrototype() {
       sas_profile:         { setter: null,               key: "profile" },
       sas_recurring_reminders: { setter: setRecurringReminders, key: "scheduling" },
       sas_supplier_price_lists: { setter: setSupplierPriceLists, key: "settings" },
+      sas_chemical_records: { setter: setChemicalRecords, key: "chemical records" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2281,6 +2363,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_profile",        filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_recurring_reminders", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_supplier_price_lists", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_chemical_records", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5244,6 +5327,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             />}
             {activePage === "properties" && <PropertiesPage
               properties={properties} clients={clients}
+              chemicalRecords={chemicalRecords}
               colours={colours} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
               inputStyle={inputStyle} labelStyle={labelStyle}
@@ -5252,6 +5336,24 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
               saveProperty={saveProperty} deleteProperty={deleteProperty} confirm={confirm}
                setActivePage={setActivePage} jobs={jobs}
+            />}
+            {activePage === "chemical records" && <ChemicalRecordsPage
+              profile={profile}
+              chemicalRecords={chemicalRecords}
+              properties={properties}
+              jobs={jobs}
+              teamMembers={teamMembers}
+              subcontractorDisplayNames={[...new Set((jobs || []).map((j) => String(j.assignedTo || "").trim()).filter(Boolean))]}
+              colours={colours} cardStyle={cardStyle}
+              buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
+              inputStyle={inputStyle} labelStyle={labelStyle}
+              DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
+              SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
+              saveChemicalRecord={saveChemicalRecord}
+              archiveChemicalRecord={archiveChemicalRecord}
+              formatDateAU={formatDateAU}
+              safeNumber={safeNumber}
+              confirm={confirm}
             />}
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}

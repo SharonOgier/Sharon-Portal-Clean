@@ -40,7 +40,7 @@ const NAV_ITEMS_BY_TYPE = {
     "tax estimator", "settings",
   ],
   tradie: ["scheduling", "assets", "properties", "jobs report"],
-  farmer: ["scheduling", "assets", "properties", "jobs report"],
+  farmer: ["scheduling", "assets", "properties", "chemical records", "jobs report"],
   smallbusiness: ["scheduling"],
 };
 
@@ -51,7 +51,7 @@ const NAV_SECTIONS_TEMPLATE = [
   },
   {
     title: "Workspace",
-    items: ["clients", "services", "assets", "properties", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
+    items: ["clients", "services", "assets", "properties", "chemical records", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
   },
   {
     title: "Admin",
@@ -72,6 +72,7 @@ const NAV_LABELS_BASE = {
   documents: "Documents",
   assets: "Assets & Depreciation",
   properties: "Properties",
+  "chemical records": "Chemical Use Records",
   scheduling: "Scheduling",
   timesheets: "Timesheets",
   "bank reconciliation": "Bank Reconciliation",
@@ -93,6 +94,7 @@ const NAV_LABEL_OVERRIDES = {
     scheduling: "Work Planner",
     properties: "Properties & Paddocks",
     assets: "Farm Assets & Depreciation",
+    "chemical records": "Chemical Use Records",
     "jobs report": "Tasks Report",
   },
   smallbusiness: {
@@ -257,6 +259,7 @@ export const SUPABASE_TABLES = {
   jobs: "sas_jobs",
   recurringReminders: "sas_recurring_reminders",
   supplierPriceLists: "sas_supplier_price_lists",
+  chemicalRecords: "sas_chemical_records",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
