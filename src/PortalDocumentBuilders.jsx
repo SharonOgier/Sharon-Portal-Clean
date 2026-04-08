@@ -845,11 +845,27 @@ ${purchaseOrderBlock}
 <div style="margin-top:10px; font-size:13px; color:#555;">
   Please use reference: ${paymentReference}
 </div>
+<<<<<<< HEAD
 <div style="margin-top:16px; padding:14px; border:1px solid #E2E8F0; border-radius:12px; background:#F7F6F5;">
   <div style="font-weight:700; color:#14202B; margin-bottom:8px;">Pay Online</div>
   <div style="font-size:13px; color:#555; margin-bottom:10px;">Choose your preferred payment method below.</div>
   ${stripeCheckoutUrl
     ? `<a href="${safeHref(stripeCheckoutUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
+=======
+${stripeCheckoutUrl || paypalCheckoutUrl
+    ? `<div style="margin-top:16px; padding:14px; border:1px solid #E2E8F0; border-radius:12px; background:#F7F6F5;">
+        <div style="font-weight:700; color:#14202B; margin-bottom:8px;">Pay Online</div>
+        <div style="font-size:13px; color:#555; margin-bottom:10px;">Choose your preferred payment method below.</div>
+        ${stripeCheckoutUrl
+      ? `<a href="${stripeCheckoutUrl}" target="_blank" rel="noreferrer" style="display:inline-block; margin-right:10px; background:#6A1B9A; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with Card</a>`
+      : ""
+    }
+        ${paypalCheckoutUrl
+      ? `<a href="${paypalCheckoutUrl}" target="_blank" rel="noreferrer" style="display:inline-block; background:#0070BA; color:#FFFFFF; text-decoration:none; padding:10px 16px; border-radius:10px; font-weight:700;">Pay with PayPal</a>`
+      : ""
+    }
+      </div>`
+>>>>>>> 9e6d6efacaa1c837b3163321d8b7c31c0693b533
     : ""
   }
   <button id="paypal-pay-btn"

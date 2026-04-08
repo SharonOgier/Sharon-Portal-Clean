@@ -99,6 +99,7 @@ import ATOTaxFormPage       from "./ATOTaxFormPage";
 
 export default function AccountingPortalPrototype() {
   const { toasts, toast, removeToast } = useToast();
+  const portalDebugEnabled = true;
   const { confirm, modal: confirmModal } = useConfirm();
 
   const MAX_RECEIPT_FILE_BYTES = 10 * 1024 * 1024;
@@ -1624,6 +1625,64 @@ export default function AccountingPortalPrototype() {
     };
   };
 
+  const getResolvedPayPalBusinessEmail = () => {
+    const candidates = [
+      profile?.paypalBusinessEmail,
+      profile?.paypalEmail,
+      profile?.paypalPaymentLink,
+    ];
+
+    for (const candidate of candidates) {
+      const value = String(candidate || "").trim();
+      if (!value) continue;
+      if (/^https?:\/\//i.test(value)) continue;
+      if (isValidEmail(value)) return value;
+    }
+
+    return "";
+  };
+
+  const buildPayPalCheckoutUrl = (documentRecord = {}) => {
+    const businessEmail = getResolvedPayPalBusinessEmail();
+    if (!businessEmail) return "";
+
+    const resolvedTotal = safeNumber(
+      documentRecord?.total ??
+      documentRecord?.grandTotal ??
+      documentRecord?.invoiceTotal ??
+      documentRecord?.amount ??
+      documentRecord?.totalAmount
+    );
+
+    if (resolvedTotal <= 0) return "";
+
+    const currencyCode = String(documentRecord?.currencyCode || "AUD").trim().toUpperCase() || "AUD";
+    const documentNumber = String(
+      documentRecord?.invoiceNumber ||
+      documentRecord?.quoteNumber ||
+      documentRecord?.paymentReference ||
+      documentRecord?.id ||
+      "Portal payment"
+    ).trim();
+
+    const params = new URLSearchParams({
+      cmd: '_xclick',
+      business: businessEmail,
+      amount: resolvedTotal.toFixed(2),
+      currency_code: currencyCode,
+      item_name: documentRecord?.invoiceNumber
+        ? `Invoice ${documentNumber}`
+        : documentRecord?.quoteNumber
+          ? `Quote ${documentNumber}`
+          : documentNumber,
+      invoice: documentNumber,
+      custom: documentRecord?.paymentReference || documentNumber,
+      no_shipping: '1',
+    });
+
+    return `https://www.paypal.com/cgi-bin/webscr?${params.toString()}`;
+  };
+
   const sendSavedDocumentEmail = async ({ documentType, documentRecord }) => {
   let emailDocumentRecord = { ...(documentRecord || {}) };
   let stripeCheckoutUrl = emailDocumentRecord?.stripeCheckoutUrl || "";
@@ -1681,6 +1740,8 @@ export default function AccountingPortalPrototype() {
     emailDocumentRecord?.totalAmount
   );
 
+  const paypalCheckoutUrl = documentType === "invoice" ? buildPayPalCheckoutUrl(emailDocumentRecord) : "";
+
   let invoiceHtml = "";
   let quoteHtml = "";
 
@@ -1726,20 +1787,160 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
 .total { margin-top: 20px; font-size: 20px; font-weight: 800; color: #006D6D; }
 </style>
 </head>
-<body>
-  <div class="card">
-    <div class="title">QUOTE</div>
-    <div class="row"><span class="label">Business:</span> ${profile?.businessName || "Your Business"}</div>
-    <div class="row"><span class="label">Quote Number:</span> ${emailDocumentRecord?.quoteNumber || ""}</div>
-    <div class="row"><span class="label">Quote Date:</span> ${formatDateAU(emailDocumentRecord?.quoteDate)}</div>
-    <div class="row"><span class="label">Expiry Date:</span> ${formatDateAU(emailDocumentRecord?.expiryDate)}</div>
-    <div class="row"><span class="label">Client:</span> ${getClientName(emailDocumentRecord?.clientId)}</div>
-    <div class="row"><span class="label">Description:</span> ${emailDocumentRecord?.description || "Professional services"}</div>
-    <div class="row"><span class="label">Quantity:</span> ${safeNumber(emailDocumentRecord?.quantity || 1)}</div>
-    <div class="row"><span class="label">Subtotal:</span> ${formatCurrencyByCode(safeNumber(emailDocumentRecord?.subtotal), emailDocumentRecord?.currencyCode || "AUD")}</div>
-    <div class="row"><span class="label">GST:</span> ${formatCurrencyByCode(safeNumber(emailDocumentRecord?.gst), emailDocumentRecord?.currencyCode || "AUD")}</div>
-    <div class="total">Total Estimate: ${formatCurrencyByCode(resolvedTotal, emailDocumentRecord?.currencyCode || "AUD")}</div>
-  </div>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:Arial,Helvetica,sans-serif;color:#14202B;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC;padding:32px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;border:1px solid #E2E8F0;overflow:hidden;">
+
+      <!-- Header -->
+      <tr style="background:#6A1B9A;">
+        <td style="padding:28px 32px;">
+          <div style="font-size:26px;font-weight:900;color:#ffffff;">${isInvoice ? "INVOICE" : "QUOTE"}</div>
+          <div style="font-size:14px;color:#E9D5FF;margin-top:4px;">${docNumber || ""}</div>
+        </td>
+        <td style="padding:28px 32px;text-align:right;">
+          <div style="font-size:13px;color:#E9D5FF;">${profile?.businessName || ""}</div>
+          ${profile?.abn ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">ABN: ${profile.abn}</div>` : ""}
+          ${profile?.email ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.email}</div>` : ""}
+          ${profile?.phone ? `<div style="font-size:12px;color:#C4B5FD;margin-top:2px;">${profile.phone}</div>` : ""}
+        </td>
+      </tr>
+
+      <!-- From / To / Dates -->
+      <tr>
+        <td colspan="2" style="padding:24px 32px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="33%" style="vertical-align:top;padding-right:16px;">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Bill To" : "Quote To"}</div>
+                <div style="font-size:14px;font-weight:700;">${emailClient?.name || ""}</div>
+                ${emailClient?.businessName ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.businessName}</div>` : ""}
+                ${emailClient?.email ? `<div style="font-size:13px;color:#475569;margin-top:2px;">${emailClient.email}</div>` : ""}
+                ${emailClient?.abn ? `<div style="font-size:12px;color:#94A3B8;margin-top:2px;">ABN: ${emailClient.abn}</div>` : ""}
+              </td>
+              <td width="33%" style="vertical-align:top;padding-right:16px;">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">Date</div>
+                <div style="font-size:13px;">${formatDateAU(docDate)}</div>
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:4px;margin-top:12px;">${docDueLabel}</div>
+                <div style="font-size:13px;">${formatDateAU(docDueValue)}</div>
+              </td>
+              <td width="33%" style="vertical-align:top;text-align:right;">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6A1B9A;margin-bottom:8px;">${isInvoice ? "Amount Due" : "Total Estimate"}</div>
+                <div style="font-size:28px;font-weight:900;color:#006D6D;">${fmt(resolvedTotal)}</div>
+                ${emailDocumentRecord?.purchaseOrderReference ? `<div style="font-size:12px;color:#94A3B8;margin-top:6px;">PO: ${emailDocumentRecord.purchaseOrderReference}</div>` : ""}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Line Items -->
+      <tr>
+        <td colspan="2" style="padding:24px 32px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;">
+            <thead>
+              <tr style="background:#F8FAFC;">
+                <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Description</th>
+                <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Qty</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Unit Price</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">GST</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748B;border-bottom:1px solid #E2E8F0;">Total</th>
+              </tr>
+            </thead>
+            <tbody>${lineRowsHtml}</tbody>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Totals -->
+      <tr>
+        <td colspan="2" style="padding:16px 32px 0;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td></td>
+              <td width="260" style="border-top:2px solid #E2E8F0;padding-top:12px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#64748B;">Subtotal (ex GST)</td>
+                    <td style="padding:4px 0;font-size:13px;text-align:right;">${fmt(safeNumber(emailDocumentRecord?.subtotal))}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#64748B;">GST</td>
+                    <td style="padding:4px 0;font-size:13px;text-align:right;">${fmt(safeNumber(emailDocumentRecord?.gst))}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:10px 0 4px;font-size:16px;font-weight:800;color:#006D6D;">${isInvoice ? "Total Due" : "Total Estimate"}</td>
+                    <td style="padding:10px 0 4px;font-size:16px;font-weight:800;color:#006D6D;text-align:right;">${fmt(resolvedTotal)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Payment Details (invoices only) -->
+      ${isInvoice && (profile?.bankName || profile?.bsb || profile?.accountNumber || profile?.payId || profile?.stripePaymentLink || profile?.paypalPaymentLink || stripeCheckoutUrl || emailDocumentRecord?.paymentReference) ? `
+      <tr>
+        <td colspan="2" style="padding:16px 32px 0;">
+          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:18px 20px;">
+            <div style="font-size:12px;font-weight:700;color:#166534;text-transform:uppercase;margin-bottom:12px;">How to Pay</div>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${emailDocumentRecord?.paymentReference ? `<tr>
+                <td style="padding:4px 0;font-size:13px;color:#166534;font-weight:700;width:140px;">Payment Reference</td>
+                <td style="padding:4px 0;font-size:14px;font-weight:800;color:#14532D;">${emailDocumentRecord.paymentReference}</td>
+              </tr>` : ""}
+              ${profile?.bankName ? `<tr>
+                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Bank</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bankName}</td>
+              </tr>` : ""}
+              ${profile?.accountNumber ? `<tr>
+                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">Account Number</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.accountNumber}</td>
+              </tr>` : ""}
+              ${profile?.bsb ? `<tr>
+                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">BSB</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.bsb}</td>
+              </tr>` : ""}
+              ${profile?.payId ? `<tr>
+                <td style="padding:4px 0;font-size:13px;color:#374151;width:140px;">PayID</td>
+                <td style="padding:4px 0;font-size:13px;color:#14532D;font-weight:600;">${profile.payId}</td>
+              </tr>` : ""}
+            </table>
+            ${(stripeCheckoutUrl || profile?.stripePaymentLink || profile?.paypalPaymentLink) ? `
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid #BBF7D0;">
+              ${(stripeCheckoutUrl || profile?.stripePaymentLink) ? `<a href="${stripeCheckoutUrl || profile.stripePaymentLink}" style="display:inline-block;background:#6A1B9A;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 28px;border-radius:8px;margin-right:10px;">Pay with Card</a>` : ""}
+              ${profile?.paypalPaymentLink ? `<a href="${profile.paypalPaymentLink}" style="display:inline-block;background:#003087;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 28px;border-radius:8px;">Pay with PayPal</a>` : ""}
+            </div>` : ""}
+          </div>
+        </td>
+      </tr>` : ""}
+
+
+      <!-- Comments -->
+      ${emailDocumentRecord?.comments ? `
+      <tr>
+        <td colspan="2" style="padding:16px 32px 0;">
+          <div style="background:#F8FAFC;border-radius:10px;padding:14px 18px;">
+            <div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:6px;">Notes</div>
+            <div style="font-size:13px;color:#475569;line-height:1.6;">${emailDocumentRecord.comments}</div>
+          </div>
+        </td>
+      </tr>` : ""}
+
+      <!-- Footer -->
+      <tr>
+        <td colspan="2" style="padding:24px 32px;text-align:center;border-top:1px solid #E2E8F0;margin-top:24px;">
+          <div style="font-size:12px;color:#94A3B8;">
+            ${profile?.businessName || ""} ${profile?.abn ? "| ABN: " + profile.abn : ""} ${profile?.email ? "| " + profile.email : ""}
+          </div>
+          ${profile?.address ? `<div style="font-size:11px;color:#CBD5E1;margin-top:4px;">${profile.address}</div>` : ""}
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
 </body>
 </html>`;
     }
@@ -3340,6 +3541,33 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
     }, [clientRevenueRows, totals, invoices, monthlyFinance, expenses, expenseCategoryRows]);
 
 
+
+  useEffect(() => {
+    if (!portalDebugEnabled) return;
+    console.log("[Portal Debug]", {
+      authReady,
+      authUser: Boolean(authUser),
+      isResettingPassword,
+      isSupabaseRestoring,
+      hasLoadedUserProfile,
+      setupComplete,
+      activePage,
+      profileBusinessName: profile?.businessName || "",
+      accountStatus: profile?.accountStatus || "",
+    });
+  }, [
+    portalDebugEnabled,
+    authReady,
+    authUser,
+    isResettingPassword,
+    isSupabaseRestoring,
+    hasLoadedUserProfile,
+    setupComplete,
+    activePage,
+    profile?.businessName,
+    profile?.accountStatus,
+  ]);
+
     ;
     if (!authReady) {
     return (
@@ -3354,7 +3582,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         }}
       >
-        Loading portal...
+        Loading portal... authReady is false
       </div>
     );
     }
@@ -3427,7 +3655,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
         }}
       >
-        Loading your profile.
+        Loading your profile. Waiting for Supabase restore to finish.
       </div>
     );
     }

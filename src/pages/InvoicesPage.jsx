@@ -511,10 +511,7 @@ export default function InvoicesPage(props) {
                     {row.status !== "Paid" ? (
                       <>
                         <button style={buttonSecondary} onClick={() => markInvoicePaid(row.id, "Bank Transfer")}>
-                          Mark Paid (Bank)
-                        </button>
-                        <button style={buttonSecondary} onClick={() => markInvoicePaid(row.id, "PayPal")}>
-                          Mark Paid (PayPal)
+                          Record Bank Transfer
                         </button>
                       </>
                     ) : (

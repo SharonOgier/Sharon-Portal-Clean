@@ -54,6 +54,7 @@ if %errorlevel%==0 (
 echo.
 echo Committing...
 git commit -m "update"
+<<<<<<< HEAD
 
 echo.
 echo Pushing...
@@ -61,4 +62,8 @@ git push -u origin master
 
 echo.
 echo Done.
+=======
+git pull origin master --rebase
+git push origin master
+>>>>>>> 9e6d6efacaa1c837b3163321d8b7c31c0693b533
 pause

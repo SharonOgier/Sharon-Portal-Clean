@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening quote…</title>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var token = params.get("token") || "";
+        var target = token
+          ? "/?quote_token=" + encodeURIComponent(token)
+          : "/";
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    Opening quote…
+  </body>
+</html>
