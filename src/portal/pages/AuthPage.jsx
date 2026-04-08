@@ -1,15 +1,11 @@
-import React, { useState, useMemo } from "react";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AuthPage
-// All state and handlers come from SharonPortalWebsite via props.
-// ─────────────────────────────────────────────────────────────────────────────
+import React from "react";
 
 export default function AuthPage(props) {
   const {
     profile = {},
     authMode,
     setAuthMode,
+    authPortalType = "standard",
     authForm,
     setAuthForm,
     authLoading,
@@ -21,10 +17,38 @@ export default function AuthPage(props) {
     buttonSecondary,
     inputStyle,
     labelStyle,
-    isValidEmail,
     handleAuthSubmit,
     handlePasswordReset,
   } = props;
+
+  const isSubcontractorInvite = authPortalType === "subcontractor";
+  const heroFeatures = isSubcontractorInvite
+    ? [
+        ["Assigned jobs only", "See only the jobs the owner has assigned to you in the subcontractor portal."],
+        ["Submit costs fast", "Upload receipts and log labour or materials directly against your assigned work."],
+        ["Separate secure login", "Create your own subcontractor account without exposing the full business portal."],
+      ]
+    : [
+        ["Invoices & quotes", "Create, send and review client billing documents."],
+        ["Financial reporting", "View live insights, receivables, cash flow and BAS support."],
+        ["Guided setup wizard", "New accounts are walked through a step-by-step wizard to configure your business profile."],
+      ];
+
+  const authCardTitle = authMode === "signup"
+    ? (isSubcontractorInvite ? "Create your subcontractor account" : "Create your Mustered account")
+    : (isSubcontractorInvite ? "Subcontractor Login" : "Mustered Login");
+  const authCardCopy = authMode === "signup"
+    ? (isSubcontractorInvite
+      ? "Create your subcontractor account using the invited email address. Once the owner assigns your subcontractor role, you will land in the subcontractor-only portal."
+      : "Create your account and our setup wizard will guide you through configuring your business profile, branding, and preferences in a few easy steps.")
+    : (isSubcontractorInvite
+      ? "Log in with the subcontractor email address that was invited so you can access assigned jobs and submit costs."
+      : "Log in to access your invoices, quotes, expenses, reports and client records.");
+  const authPrimaryLabel = authLoading
+    ? "Working..."
+    : authMode === "signup"
+      ? (isSubcontractorInvite ? "Create Subcontractor Account" : "Create Account")
+      : (isSubcontractorInvite ? "Subcontractor Login" : "Mustered Login");
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter") {
@@ -38,12 +62,12 @@ export default function AuthPage(props) {
       {showResetSentModal && (
         <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15,23,42,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 18, padding: 36, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.2)", textAlign: "center", fontFamily: "sans-serif" }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>Email</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: "#14202B", marginBottom: 12 }}>Check your email</div>
             <div style={{ fontSize: 14, color: "#64748B", lineHeight: 1.7, marginBottom: 8 }}>A password reset link has been sent to</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#6A1B9A", marginBottom: 20 }}>{authForm.email}</div>
             <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.7, marginBottom: 28 }}>
-              Click the link in the email to set a new password. Check your spam folder if it doesn't arrive within a few minutes.
+              Click the link in the email to set a new password. Check your spam folder if it does not arrive within a few minutes.
             </div>
             <button
               onClick={() => setShowResetSentModal(false)}
@@ -76,7 +100,7 @@ export default function AuthPage(props) {
               boxShadow: "0 10px 24px rgba(106,27,154,0.18)",
             }}
           >
-            Mustered Login
+            {isSubcontractorInvite ? "Subcontractor Access" : "Mustered Login"}
           </a>
         </div>
 
@@ -104,22 +128,20 @@ export default function AuthPage(props) {
           >
             <div style={{ display: "grid", gap: 18 }}>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.14)", padding: "8px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800, letterSpacing: 0.3, width: "fit-content" }}>
-                Client portal access
+                {isSubcontractorInvite ? "Subcontractor portal access" : "Client portal access"}
               </div>
               <div style={{ fontSize: 44, lineHeight: 1.05, fontWeight: 900, maxWidth: 560 }}>
-                Login to your portal from the landing page
+                {isSubcontractorInvite ? "Join the subcontractor portal and manage assigned work" : "Login to your portal from the landing page"}
               </div>
               <div style={{ fontSize: 16, lineHeight: 1.7, opacity: 0.92, maxWidth: 620 }}>
-                View invoices, quotes, expenses, documents and financial reports from one secure portal. This page now gives you a proper landing section with a visible login call-to-action so you can check how it looks on desktop and mobile.
+                {isSubcontractorInvite
+                  ? "Create your subcontractor login to view assigned jobs, upload receipts, and submit labour or materials costs without seeing the rest of the business portal."
+                  : "View invoices, quotes, expenses, documents and financial reports from one secure portal. This page gives you a proper landing section with a visible login call-to-action so you can check how it looks on desktop and mobile."}
               </div>
             </div>
 
             <div style={{ display: "grid", gap: 14 }}>
-              {[
-                ["Invoices & quotes", "Create, send and review client billing documents."],
-                ["Financial reporting", "View live insights, receivables, cash flow and BAS support."],
-                ["Guided setup wizard", "New accounts are walked through a step-by-step wizard to configure your business profile."],
-              ].map(([title, copy]) => (
+              {heroFeatures.map(([title, copy]) => (
                 <div key={title} style={{ background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 18, padding: 16 }}>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{title}</div>
                   <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.9, marginTop: 4 }}>{copy}</div>
@@ -142,12 +164,10 @@ export default function AuthPage(props) {
           >
             <div>
               <div style={{ fontSize: 28, fontWeight: 900, color: colours.text, marginBottom: 8 }}>
-                {authMode === "signup" ? "Create your Mustered account" : "Mustered Login"}
+                {authCardTitle}
               </div>
               <div style={{ fontSize: 14, color: colours.muted, lineHeight: 1.7, fontFamily: "'DM Sans', sans-serif" }}>
-                {authMode === "signup"
-                  ? "Create your account and our setup wizard will guide you through configuring your business profile, branding, and preferences — all in a few easy steps."
-                  : "Log in to access your invoices, quotes, expenses, reports and client records."}
+                {authCardCopy}
               </div>
             </div>
 
@@ -156,7 +176,8 @@ export default function AuthPage(props) {
                 <label style={labelStyle}>Email</label>
                 <input
                   style={inputStyle}
-                  type="email" onKeyDown={handleKeyDown}
+                  type="email"
+                  onKeyDown={handleKeyDown}
                   autoComplete="email"
                   value={authForm.email}
                   onChange={(e) => setAuthForm((prev) => ({ ...prev, email: e.target.value }))}
@@ -192,13 +213,15 @@ export default function AuthPage(props) {
 
             {authMode === "signup" ? (
               <div style={{ fontSize: 12, color: colours.muted, lineHeight: 1.7, fontFamily: "'DM Sans', sans-serif" }}>
-                Use at least 8 characters with upper-case, lower-case and a number. After signing up, our <strong style={{ color: colours.purple }}>setup wizard</strong> will walk you through everything.
+                {isSubcontractorInvite
+                  ? "Use the invited email address when you sign up. The business owner can then assign your subcontractor role and job access."
+                  : <>Use at least 8 characters with upper-case, lower-case and a number. After signing up, our <strong style={{ color: colours.purple }}>setup wizard</strong> will walk you through everything.</>}
               </div>
             ) : null}
 
             <div style={{ display: "grid", gap: 10 }}>
               <button type="button" style={{ ...buttonPrimary, width: "100%", justifyContent: "center" }} onClick={handleAuthSubmit} disabled={authLoading}>
-                {authLoading ? "Working..." : authMode === "signup" ? "Create Account" : "Mustered Login"}
+                {authPrimaryLabel}
               </button>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
@@ -215,12 +238,14 @@ export default function AuthPage(props) {
             </div>
 
             <div style={{ background: colours.bg, borderRadius: 16, padding: 16, fontSize: 13, color: colours.muted, lineHeight: 1.7, fontFamily: "'DM Sans', sans-serif" }}>
-              <strong style={{ color: colours.text }}>✨ New here?</strong> Create an account and our guided setup wizard will help you configure your business name, ABN, contact details, and preferences in just a few minutes.
+              <strong style={{ color: colours.text }}>New here?</strong>{" "}
+              {isSubcontractorInvite
+                ? "Use the invited email address to create your subcontractor login. If you can sign in but do not see jobs yet, the owner may still need to assign your subcontractor role and jobs."
+                : "Create an account and our guided setup wizard will help you configure your business name, ABN, contact details, and preferences in just a few minutes."}
             </div>
           </div>
         </div>
       </div>
     </div>
   );
-
 }

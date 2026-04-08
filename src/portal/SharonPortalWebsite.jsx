@@ -231,6 +231,7 @@ export default function AccountingPortalPrototype() {
   const [showResetSentModal, setShowResetSentModal] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [authPortalType, setAuthPortalType] = useState("standard");
   const [authForm, setAuthForm] = useState({
     email: "",
     password: "",
@@ -530,6 +531,20 @@ export default function AccountingPortalPrototype() {
 
     setWizardSaving(true);
     try {
+      if (supabase && authUser) {
+        const savedProfile = await saveProfileToSupabase(nextProfile);
+        if (!savedProfile) {
+          throw new Error("Your business profile could not be saved. Please try again.");
+        }
+        await supabase.auth.updateUser({
+          data: {
+            ...authUser.user_metadata,
+            needs_setup: false,
+            needsSetup: false,
+          },
+        });
+      }
+
       clearPortalForFreshSetup();
       setProfile({
         ...nextProfile,
@@ -552,19 +567,10 @@ export default function AccountingPortalPrototype() {
       setSetupComplete(true);
       setHasLoadedUserProfile(true);
       setActivePage("dashboard");
-
-      if (supabase && authUser) {
-        const savedProfile = await saveProfileToSupabase(nextProfile);
-        if (savedProfile) {
-          await supabase.auth.updateUser({
-            data: {
-              ...authUser.user_metadata,
-              needs_setup: false,
-              needsSetup: false,
-            },
-          });
-        }
-      }
+      toast.success("Business profile saved!");
+    } catch (error) {
+      console.error("SETUP WIZARD SAVE ERROR:", error);
+      toast.error(error?.message || "Your business profile could not be saved.");
     } finally {
       setWizardSaving(false);
     }
@@ -625,6 +631,16 @@ export default function AccountingPortalPrototype() {
         hashParams.get("mode") ||
         hashParams.get("auth") ||
         "";
+      const requestedPortalType =
+        search.get("portal") ||
+        search.get("role") ||
+        hashParams.get("portal") ||
+        hashParams.get("role") ||
+        "";
+      const requestedEmail =
+        search.get("email") ||
+        hashParams.get("email") ||
+        "";
 
       if (
         pathName.includes("signup") ||
@@ -639,6 +655,11 @@ export default function AccountingPortalPrototype() {
         requestedMode === "login"
       ) {
         setAuthMode("signin");
+      }
+
+      setAuthPortalType(requestedPortalType === "subcontractor" ? "subcontractor" : "standard");
+      if (requestedEmail) {
+        setAuthForm((prev) => ({ ...prev, email: requestedEmail }));
       }
 
       const recoveryRequested =
@@ -791,55 +812,64 @@ export default function AccountingPortalPrototype() {
     };
   }, [invoices, quotes, profile, clients]);
 
-  // Check admin role and load all portal users for admin
+  // Check admin role and load optional team/admin tables only when needed.
   useEffect(() => {
-    if (!authUser || !supabase) return;
-    (async () => {
-      try {
-        const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", authUser.id);
-        const adminRole = (roles || []).some(r => r.role === "admin");
-        const subRole = (roles || []).some(r => r.role === "subcontractor");
-        setIsAdmin(adminRole);
-        setIsSubcontractor(subRole);
-        if (adminRole) {
-          const { data: profiles } = await supabase.from("sas_profile").select("id, data, user_id");
-          setAllPortalUsers((profiles || []).map(p => ({
-            userId: p.user_id,
-            businessName: p.data?.businessName || p.data?.name || "Unknown",
-            email: p.data?.email || "",
-          })));
-        }
-        // Load team members and invitations
-        const { data: members, error: membersError } = await supabase
-          .from("sas_team_members")
-          .select("*")
-          .eq("owner_user_id", authUser.id);
-        if (membersError && membersError.code !== "42501") throw membersError;
-        setTeamMembers(members || []);
-        const { data: invites, error: invitesError } = await supabase
-          .from("sas_team_invitations")
-          .select("*")
-          .eq("inviter_user_id", authUser.id);
-        if (invitesError && invitesError.code !== "42501") throw invitesError;
-        setTeamInvitations(invites || []);
-        // Check for pending invitations for this user and auto-accept
-        const { data: pendingInvites, error: pendingInvitesError } = await supabase
-          .from("sas_team_invitations")
-          .select("*")
-          .eq("email", authUser.email)
-          .eq("status", "pending");
-        if (pendingInvitesError && pendingInvitesError.code !== "42501") throw pendingInvitesError;
-        if (pendingInvites?.length) {
-          for (const inv of pendingInvites) {
-            await supabase.from("sas_team_members").insert({ owner_user_id: inv.inviter_user_id, member_user_id: authUser.id, permission: inv.permission }).select();
-            await supabase.from("sas_team_invitations").update({ status: "accepted", accepted_at: new Date().toISOString() }).eq("id", inv.id);
+      if (!authUser || !supabase) return;
+      (async () => {
+        try {
+          const { data: roles, error: rolesError } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", authUser.id);
+          if (rolesError && !["42501", "42P01"].includes(rolesError.code || "")) throw rolesError;
+          const adminRole = (roles || []).some(r => r.role === "admin");
+          const subRole = (roles || []).some(r => r.role === "subcontractor");
+          setIsAdmin(adminRole);
+          setIsSubcontractor(subRole);
+          if (adminRole && activePage === "settings") {
+            const { data: profiles } = await supabase.from("sas_profile").select("id, data, user_id");
+            setAllPortalUsers((profiles || []).map(p => ({
+              userId: p.user_id,
+              businessName: p.data?.businessName || p.data?.name || "Unknown",
+              email: p.data?.email || "",
+            })));
           }
+
+          if (activePage !== "settings") {
+            return;
+          }
+
+          // Load team members and invitations only in Settings where they are used.
+          const { data: members, error: membersError } = await supabase
+            .from("sas_team_members")
+            .select("*")
+            .eq("owner_user_id", authUser.id);
+          if (membersError && !["42501", "42P01"].includes(membersError.code || "")) throw membersError;
+          setTeamMembers(members || []);
+          const { data: invites, error: invitesError } = await supabase
+            .from("sas_team_invitations")
+            .select("*")
+            .eq("inviter_user_id", authUser.id);
+          if (invitesError && !["42501", "42P01"].includes(invitesError.code || "")) throw invitesError;
+          setTeamInvitations(invites || []);
+          // Check for pending invitations for this user and auto-accept
+          const { data: pendingInvites, error: pendingInvitesError } = await supabase
+            .from("sas_team_invitations")
+            .select("*")
+            .eq("email", authUser.email)
+            .eq("status", "pending");
+          if (pendingInvitesError && !["42501", "42P01"].includes(pendingInvitesError.code || "")) throw pendingInvitesError;
+          if (pendingInvites?.length) {
+            for (const inv of pendingInvites) {
+              await supabase.from("sas_team_members").insert({ owner_user_id: inv.inviter_user_id, member_user_id: authUser.id, permission: inv.permission }).select();
+              await supabase.from("sas_team_invitations").update({ status: "accepted", accepted_at: new Date().toISOString() }).eq("id", inv.id);
+            }
           const { data: updatedMembers } = await supabase.from("sas_team_members").select("*").eq("owner_user_id", authUser.id);
           setTeamMembers(updatedMembers || []);
         }
-      } catch (err) { console.warn("Multi-user check failed:", err); }
+        } catch (err) { console.warn("Multi-user check failed:", err); }
     })();
-  }, [authUser]);
+  }, [authUser, activePage]);
 
   const switchToUser = async (targetUserId) => {
     if (!supabase || !authUser) return;
@@ -1830,7 +1860,25 @@ export default function AccountingPortalPrototype() {
     if (!supabase || !authUser?.id) return null;
     try {
       setSupabaseSyncStatus("Saving profile to Supabase database...");
-      const savedProfile = await upsertRecordInDatabase(SUPABASE_TABLES.profile, profilePayload);
+      let payloadWithId = { ...(profilePayload || {}) };
+
+      if (!payloadWithId.id) {
+        const { data: existingProfile, error: existingProfileError } = await supabase
+          .from(SUPABASE_TABLES.profile)
+          .select("id, data, user_id")
+          .eq("user_id", activePortalUserId || authUser.id)
+          .maybeSingle();
+        if (existingProfileError) throw existingProfileError;
+        if (existingProfile?.id) {
+          payloadWithId = {
+            ...(existingProfile.data || {}),
+            ...payloadWithId,
+            id: existingProfile.id,
+          };
+        }
+      }
+
+      const savedProfile = await upsertRecordInDatabase(SUPABASE_TABLES.profile, payloadWithId);
 
       setProfile((prev) => ({
         ...prev,
@@ -4379,6 +4427,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       <AuthPage
         authMode={authMode}
         setAuthMode={setAuthMode}
+        authPortalType={authPortalType}
         authForm={authForm}
         setAuthForm={setAuthForm}
         authLoading={authLoading}

@@ -50,6 +50,8 @@ export default function SettingsPage(props) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePermission, setInvitePermission] = useState("viewer");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [subcontractorInviteEmail, setSubcontractorInviteEmail] = useState("");
+  const [sendingSubcontractorInvite, setSendingSubcontractorInvite] = useState(false);
 
   const OWNER_OVERRIDE_EMAILS = ["info@sharonogier.com", "sharonlogier@gmail.com"];
   const isOwner = OWNER_OVERRIDE_EMAILS.includes((authUserEmail || "").toLowerCase().trim());
@@ -92,6 +94,17 @@ export default function SettingsPage(props) {
     }
     toast.success(successMessage);
     return savedProfile;
+  };
+
+  const buildPortalAuthUrl = (params = {}) => {
+    const nextParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        nextParams.set(key, String(value));
+      }
+    });
+    const query = nextParams.toString();
+    return `${window.location.origin}/auth${query ? `?${query}` : ""}`;
   };
 
   return (
@@ -793,16 +806,70 @@ export default function SettingsPage(props) {
                 Subcontractors get a limited portal where they can view assigned jobs and submit their costs (labour, materials, receipts).
                 Assign them to specific jobs from the Scheduling → Job Costing panel.
               </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <label style={labelStyle}>Subcontractor Email</label>
+                  <input
+                    style={inputStyle}
+                    type="email"
+                    placeholder="subcontractor@example.com"
+                    value={subcontractorInviteEmail}
+                    onChange={(e) => setSubcontractorInviteEmail(e.target.value)}
+                  />
+                </div>
+                <button
+                  style={{ ...buttonPrimary, padding: "10px 20px", whiteSpace: "nowrap" }}
+                  disabled={sendingSubcontractorInvite}
+                  onClick={async () => {
+                    const email = String(subcontractorInviteEmail || "").trim().toLowerCase();
+                    if (!email || !isValidEmail(email)) {
+                      toast.error("Please enter a valid subcontractor email.");
+                      return;
+                    }
+                    if (!supabase) {
+                      toast.error("Email service is not available right now.");
+                      return;
+                    }
+
+                    const inviteUrl = buildPortalAuthUrl({
+                      mode: "signup",
+                      portal: "subcontractor",
+                      role: "subcontractor",
+                      email,
+                    });
+
+                    setSendingSubcontractorInvite(true);
+                    try {
+                      const { error } = await supabase.functions.invoke("send-document-email", {
+                        body: {
+                          to: [email],
+                          subject: `Subcontractor portal invite from ${profile.businessName || "your contractor"}`,
+                          html: `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;"><h2 style="color:#6A1B9A;margin-bottom:12px;">Subcontractor Portal Invite</h2><p style="font-size:14px;line-height:1.7;color:#334155;">${profile.businessName || "A business"} has invited you to join their subcontractor portal.</p><p style="font-size:14px;line-height:1.7;color:#334155;">Use the button below to create your subcontractor login with this email address. Once the owner assigns your subcontractor role and jobs, you'll be able to view assigned work and submit receipts and costs.</p><p style="margin:24px 0;"><a href="${inviteUrl}" style="display:inline-block;background:#6A1B9A;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;">Create subcontractor account</a></p><p style="font-size:13px;line-height:1.7;color:#64748B;">If the button does not work, copy and paste this link into your browser:<br /><a href="${inviteUrl}">${inviteUrl}</a></p></div>`,
+                        },
+                      });
+                      if (error) throw error;
+                      setSubcontractorInviteEmail("");
+                      toast.success("Subcontractor invite sent!");
+                    } catch (err) {
+                      toast.error(err.message || "Failed to send subcontractor invite");
+                    } finally {
+                      setSendingSubcontractorInvite(false);
+                    }
+                  }}
+                >
+                  {sendingSubcontractorInvite ? "Sending..." : "Send Subcontractor Invite"}
+                </button>
+              </div>
               <div style={{ background: "#F3E5F5", borderRadius: 12, padding: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#6A1B9A", marginBottom: 4 }}>How it works</div>
                 <ol style={{ fontSize: 12, color: "#4A148C", lineHeight: 1.7, margin: 0, paddingLeft: 20 }}>
-                  <li>The subcontractor creates an account at your portal login page</li>
+                  <li>Send them the subcontractor invite email above so they land on the subcontractor sign-up page</li>
+                  <li>They create an account using the invited email address</li>
                   <li>You assign the <strong>subcontractor</strong> role to their account (contact admin)</li>
                   <li>Assign them to jobs from the Scheduling page → Job Costing → Subcontractor tab</li>
                   <li>They'll see only their assigned jobs and can submit costs with receipts</li>
                 </ol>
               </div>
-            </div>
           </div>
         )}
 

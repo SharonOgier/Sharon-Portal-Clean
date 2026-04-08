@@ -11,8 +11,8 @@ export default function AuthPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const mode = searchParams.get("mode");
-    const query = mode ? `?mode=${mode}` : "";
+    const queryString = searchParams.toString();
+    const query = queryString ? `?${queryString}` : "";
     navigate(`/portal${query}`, { replace: true });
   }, [searchParams, navigate]);
 
