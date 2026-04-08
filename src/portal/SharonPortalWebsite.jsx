@@ -97,6 +97,7 @@ import AssetsPage           from "./pages/AssetsPage";
 import PropertiesPage       from "./pages/PropertiesPage";
 import ChemicalRecordsPage  from "./pages/ChemicalRecordsPage";
 import LivestockPage        from "./pages/LivestockPage";
+import ComplianceDashboardPage from "./pages/ComplianceDashboardPage";
 import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
 import IncomeSourcesPage    from "./pages/IncomeSourcesPage";
@@ -5404,6 +5405,8 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               saveAllCurrentStateToSupabase={saveAllCurrentStateToSupabase}
                supabaseSyncStatus={supabaseSyncStatus} getClientName={getClientName}
                properties={properties} jobs={jobs}
+               chemicalRecords={chemicalRecords} livestockRecords={livestockRecords}
+               todayLocal={todayLocal}
             />}
             {activePage === "financial insights" && <FinancialInsightsPage
               profile={profile} totals={totals} invoiceAllocations={invoiceAllocations}
@@ -5619,6 +5622,18 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               archiveLivestockRecord={archiveLivestockRecord}
               formatDateAU={formatDateAU}
               confirm={confirm}
+            />}
+            {activePage === "compliance" && <ComplianceDashboardPage
+              chemicalRecords={chemicalRecords}
+              livestockRecords={livestockRecords}
+              jobs={jobs}
+              properties={properties}
+              colours={colours} cardStyle={cardStyle}
+              SectionCard={SectionCard} MetricCard={MetricCard}
+              DataTable={DataTable} DashboardHero={DashboardHero}
+              InsightChip={InsightChip}
+              formatDateAU={formatDateAU}
+              todayLocal={todayLocal}
             />}
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}
