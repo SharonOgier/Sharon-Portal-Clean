@@ -682,6 +682,14 @@ export default function SchedulingPage({
     const p = propertyMap[String(propId)];
     return p?.subLocations || [];
   };
+  const activeWithholdingEndDate = useMemo(() => {
+    const selectedProperty = propertyMap[String(form.propertyId || "")];
+    if (!selectedProperty) return "";
+    const subLocation = (selectedProperty.subLocations || []).find((s) => String(s.id) === String(form.subLocationId || ""));
+    const propertyEnd = String(selectedProperty.withholdingEndDate || "");
+    const subEnd = String(subLocation?.withholdingEndDate || "");
+    return subEnd && subEnd > propertyEnd ? subEnd : propertyEnd;
+  }, [form.propertyId, form.subLocationId, propertyMap]);
 
   const getJobAddress = (job) => {
     const prop = propertyMap[String(job.propertyId)];
@@ -1700,6 +1708,11 @@ export default function SchedulingPage({
                   </div>
                 )}
               </div>
+              {activeWithholdingEndDate && String(form.startDate || "") <= String(activeWithholdingEndDate) && (
+                <div style={{ fontSize: 12, color: "#B91C1C", fontWeight: 700, background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 10, padding: "8px 10px" }}>
+                  Withholding warning: this paddock has an active chemical withholding period until {activeWithholdingEndDate}. Check livestock movement before scheduling.
+                </div>
+              )}
 
               {/* Assigned + Colour + Recurrence */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

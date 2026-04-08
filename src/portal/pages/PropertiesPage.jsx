@@ -118,10 +118,26 @@ function PropertyForm({ form, setForm, clients = [], inputStyle, labelStyle, car
 // ---------------------------------------------------------------------------
 // PROPERTY DETAIL VIEW
 // ---------------------------------------------------------------------------
-function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary, setActivePage, jobs = [] }) {
+function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary, setActivePage, jobs = [], chemicalRecords = [] }) {
   const client = clients.find(c => String(c.id) === String(property.clientId));
   const subs = property.subLocations || [];
   const hasCoords = property.gpsLat && property.gpsLng;
+  const chemicalHistory = (chemicalRecords || [])
+    .filter((record) => String(record.propertyId || "") === String(property.id))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+  const livestockConflicts = chemicalHistory.flatMap((record) => {
+    const withholdingEnd = String(record.withholdingEndDate || "");
+    if (!withholdingEnd) return [];
+    return (jobs || []).filter((job) => {
+      const sameProperty = String(job.propertyId || job.siteId || "") === String(property.id);
+      if (!sameProperty) return false;
+      const jobDate = String(job.startDate || job.date || "");
+      if (!jobDate || jobDate > withholdingEnd) return false;
+      const context = `${job.title || ""} ${job.name || ""} ${job.notes || ""}`.toLowerCase();
+      return context.includes("livestock") || context.includes("graze") || context.includes("stock");
+    }).map((job) => ({ record, job }));
+  });
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -222,6 +238,51 @@ function PropertyDetail({ property, clients, colours, cardStyle, buttonSecondary
           </div>
         );
       })()}
+
+      {/* Chemical history */}
+      <div style={{ ...cardStyle, padding: 16, background: "#F8FAFC", border: `1px solid ${colours.border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", color: colours.muted, marginBottom: 8 }}>
+          Chemicals Used ({chemicalHistory.length})
+        </div>
+        {chemicalHistory.length === 0 ? (
+          <div style={{ fontSize: 13, color: colours.muted }}>No chemical applications recorded for this paddock yet.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {chemicalHistory.map((record) => {
+              const sub = subs.find((s) => String(s.id) === String(record.subLocationId || ""));
+              return (
+                <div key={record.id} style={{ background: "#fff", border: `1px solid ${colours.border}`, borderRadius: 10, padding: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: colours.text }}>{record.chemicalProductName || "Chemical"}</div>
+                    <div style={{ fontSize: 12, color: colours.muted }}>{record.date || ""}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: colours.muted, marginTop: 4 }}>
+                    {sub ? `${sub.name} | ` : ""}{record.targetPestOrWeed || "Target not set"} | Operator: {record.operatorName || "—"}
+                  </div>
+                  {record.withholdingEndDate && (
+                    <div style={{ fontSize: 12, color: "#B45309", marginTop: 4 }}>
+                      Withholding until {record.withholdingEndDate}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {livestockConflicts.length > 0 && (
+        <div style={{ ...cardStyle, padding: 14, border: "1px solid #FCA5A5", background: "#FEF2F2" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#991B1B", marginBottom: 6 }}>Livestock Scheduling Warning</div>
+          <div style={{ display: "grid", gap: 4 }}>
+            {livestockConflicts.slice(0, 8).map((item, i) => (
+              <div key={`${item.job.id}-${i}`} style={{ fontSize: 12, color: "#7F1D1D" }}>
+                {item.job.title || item.job.name || `Job ${item.job.id}`} on {item.job.startDate || item.job.date || "unscheduled"} conflicts with withholding until {item.record.withholdingEndDate}.
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -342,6 +403,7 @@ export default function PropertiesPage(props) {
     confirm = null,
      setActivePage = () => {},
      jobs = [],
+     chemicalRecords = [],
   } = props;
 
   // ---- View states ----
@@ -374,6 +436,27 @@ export default function PropertiesPage(props) {
   const typeCounts = {};
   PROPERTY_TYPES.forEach(t => typeCounts[t] = 0);
   properties.forEach(p => { if (typeCounts[p.propertyType] !== undefined) typeCounts[p.propertyType]++; });
+  const livestockWarningsByProperty = useMemo(() => {
+    const warningMap = {};
+    properties.forEach((property) => {
+      const records = (chemicalRecords || []).filter((record) =>
+        String(record.propertyId || "") === String(property.id) &&
+        String(record.withholdingEndDate || "").trim()
+      );
+      const conflicts = records.flatMap((record) => (
+        (jobs || []).filter((job) => {
+          const sameProperty = String(job.propertyId || job.siteId || "") === String(property.id);
+          if (!sameProperty) return false;
+          const jobDate = String(job.startDate || job.date || "");
+          if (!jobDate || jobDate > String(record.withholdingEndDate || "")) return false;
+          const context = `${job.title || ""} ${job.name || ""} ${job.notes || ""}`.toLowerCase();
+          return context.includes("livestock") || context.includes("graze") || context.includes("stock");
+        })
+      ));
+      warningMap[String(property.id)] = conflicts.length;
+    });
+    return warningMap;
+  }, [chemicalRecords, jobs, properties]);
 
   // ---- Handlers ----
   const handleSave = () => {
@@ -413,6 +496,7 @@ export default function PropertiesPage(props) {
             buttonSecondary={buttonSecondary}
             setActivePage={setActivePage}
             jobs={jobs}
+            chemicalRecords={chemicalRecords}
           />
         </SectionCard>
       </div>
@@ -540,6 +624,12 @@ export default function PropertiesPage(props) {
                 style={{ color: colours.purple, fontWeight: 700, textDecoration: "none", fontSize: 12 }}
               >📍 View</a>
             ) : <span style={{ color: colours.muted }}>—</span> },
+            { key: "withholding", label: "Withholding", render: (_v, row) => {
+              const count = livestockWarningsByProperty[String(row.id)] || 0;
+              return count > 0
+                ? <span style={{ fontSize: 11, fontWeight: 700, color: "#B91C1C", background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 999, padding: "2px 8px" }}>{count} livestock conflict{count !== 1 ? "s" : ""}</span>
+                : <span style={{ color: colours.muted }}>â€”</span>;
+            }},
             { key: "actions", label: "", render: (_, row) => (
               <div style={{ display: "flex", gap: 6 }}>
                 <button style={buttonSecondary} onClick={() => handleViewDetail(row)}>View</button>
