@@ -15,12 +15,16 @@ const COST_TYPES = [
 ];
 
 export default function SubcontractorPortal({ authUser, onSignOut }) {
+  const [activeTab, setActiveTab] = useState("jobs");
   const [assignments, setAssignments] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState(null);
   const [showSubmitForm, setShowSubmitForm] = useState(false);
+  const [updatingJob, setUpdatingJob] = useState(false);
+  const [jobNoteInput, setJobNoteInput] = useState("");
+  const [jobPhotoFile, setJobPhotoFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [receiptFile, setReceiptFile] = useState(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
@@ -32,6 +36,24 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
     rate: "",
     notes: "",
   });
+  const [chemForm, setChemForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    propertyId: "",
+    chemicalProductName: "",
+    targetPestOrWeed: "",
+    rateApplied: "",
+    totalQuantityUsed: "",
+    notes: "",
+  });
+  const [savingChem, setSavingChem] = useState(false);
+  const [machineryForm, setMachineryForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    assetId: "",
+    usageHours: "",
+    notes: "",
+  });
+  const [savingMachinery, setSavingMachinery] = useState(false);
+  const [availableAssets, setAvailableAssets] = useState([]);
 
   // Load assignments and submissions
   useEffect(() => {
@@ -111,6 +133,27 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
         .order("created_at", { ascending: false });
       
       setSubmissions(costData || []);
+
+      // Fetch assets from all owners
+      if (assignments?.length) {
+        const ownerIds = [...new Set(assignments.map(a => a.job_owner_user_id))];
+        const allAssets = [];
+        for (const ownerId of ownerIds) {
+          const { data: assetsData } = await supabase
+            .from("sas_assets")
+            .select("*")
+            .eq("user_id", ownerId);
+          if (assetsData) {
+            allAssets.push(...assetsData.map(a => ({
+              id: a.id,
+              name: a.data?.name || "Unnamed Asset",
+              type: a.data?.assetType || "Other",
+              ownerId: a.user_id
+            })));
+          }
+        }
+        setAvailableAssets(allAssets);
+      }
     } catch (err) {
       console.error("Failed to load subcontractor data:", err);
     }
@@ -131,6 +174,158 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
     if (!selectedJob) return [];
     return submissions.filter(s => s.job_id === String(selectedJob));
   }, [selectedJob, submissions]);
+
+  const handleUpdateJob = async (statusUpdate = null) => {
+    if (!selectedJobData || !selectedJobData._dbId) return;
+    setUpdatingJob(true);
+    try {
+      const { data: originalRow } = await supabase
+        .from("sas_jobs")
+        .select("*")
+        .eq("id", selectedJobData._dbId)
+        .single();
+
+      if (!originalRow) throw new Error("Job not found");
+
+      const currentData = originalRow.data || {};
+      const nextData = { ...currentData };
+
+      if (statusUpdate) {
+        nextData.status = statusUpdate;
+      }
+
+      if (jobNoteInput.trim()) {
+        const timestamp = new Date().toLocaleString("en-AU");
+        const newNote = `[${timestamp}] (Subcontractor): ${jobNoteInput.trim()}`;
+        nextData.notes = nextData.notes ? `${nextData.notes}\n\n${newNote}` : newNote;
+      }
+
+      if (jobPhotoFile) {
+        const ext = jobPhotoFile.name.split(".").pop();
+        const path = `jobs/${selectedJobData._dbId}/${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("receipts") // Using receipts bucket as it's already configured
+          .upload(path, jobPhotoFile);
+
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage
+            .from("receipts")
+            .getPublicUrl(path);
+          const newPhoto = {
+            url: urlData?.publicUrl || path,
+            caption: jobNoteInput.trim() || "Uploaded by subcontractor",
+            date: new Date().toISOString(),
+          };
+          if (!nextData.photos) nextData.photos = [];
+          if (Array.isArray(nextData.photos)) {
+            nextData.photos.push(newPhoto);
+          } else {
+            // Support old photo structure if any
+            nextData.photos = [newPhoto];
+          }
+        }
+      }
+
+      const { error } = await supabase
+        .from("sas_jobs")
+        .update({ data: nextData, updated_at: new Date().toISOString() })
+        .eq("id", selectedJobData._dbId);
+
+      if (error) throw error;
+
+      setJobNoteInput("");
+      setJobPhotoFile(null);
+      await loadData();
+    } catch (err) {
+      alert("Failed to update job: " + err.message);
+    }
+    setUpdatingJob(false);
+  };
+
+  const handleSaveChem = async () => {
+    if (!chemForm.propertyId || !chemForm.chemicalProductName || !chemForm.rateApplied) {
+      alert("Please fill in property, chemical name and rate applied.");
+      return;
+    }
+    setSavingChem(true);
+    try {
+      const payload = {
+        ...chemForm,
+        operatorName: authUser.email,
+        operatorId: authUser.id,
+        archived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const matchedJob = jobs.find(j => (j.location || j.siteAddress) === chemForm.propertyId);
+      const ownerId = matchedJob ? matchedJob._userId : (assignments[0]?.job_owner_user_id || authUser.id);
+
+      const { error } = await supabase
+        .from("sas_chemical_records")
+        .insert({
+          user_id: ownerId,
+          data: payload,
+          updated_at: new Date().toISOString()
+        });
+
+      // Let's use the first assignment's owner for now, or require a job to be selected.
+      // Actually, we can get the owner from the selected property if we map it.
+
+      if (error) throw error;
+      alert("Chemical record saved!");
+      setChemForm({
+        date: new Date().toISOString().slice(0, 10),
+        propertyId: "",
+        chemicalProductName: "",
+        targetPestOrWeed: "",
+        rateApplied: "",
+        totalQuantityUsed: "",
+        notes: "",
+      });
+    } catch (err) {
+      alert("Failed to save chemical record: " + err.message);
+    }
+    setSavingChem(false);
+  };
+
+  const handleSaveMachinery = async () => {
+    if (!machineryForm.assetId || !machineryForm.usageHours) {
+      alert("Please select machinery and enter usage hours.");
+      return;
+    }
+    setSavingMachinery(true);
+    try {
+      const asset = availableAssets.find(a => String(a.id) === String(machineryForm.assetId));
+      const ownerId = asset ? asset.ownerId : (assignments[0]?.job_owner_user_id || authUser.id);
+
+      const payload = {
+        ...machineryForm,
+        operatorName: authUser.email,
+        operatorId: authUser.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from("sas_machinery_logs")
+        .insert({
+          user_id: ownerId,
+          data: payload,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      alert("Machinery log saved!");
+      setMachineryForm({
+        date: new Date().toISOString().slice(0, 10),
+        assetId: "",
+        usageHours: "",
+        notes: "",
+      });
+    } catch (err) {
+      alert("Failed to save machinery log: " + err.message);
+    }
+    setSavingMachinery(false);
+  };
 
   const handleSubmitCost = async () => {
     if (!selectedAssignment || !costForm.description.trim()) return;
@@ -218,6 +413,22 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
         @media (max-width: 768px) {
           .subcon-grid { grid-template-columns: 1fr !important; }
           .subcon-job-detail-grid { grid-template-columns: 1fr !important; }
+          .subcon-tabs { overflow-x: auto; white-space: nowrap; }
+        }
+        .subcon-tab-btn {
+          padding: 12px 20px;
+          border: none;
+          background: none;
+          cursor: pointer;
+          font-weight: 700;
+          font-size: 14px;
+          color: ${colours.muted};
+          border-bottom: 2px solid transparent;
+          transition: all 0.2s ease;
+        }
+        .subcon-tab-btn.active {
+          color: ${colours.purple};
+          border-bottom-color: ${colours.purple};
         }
       `}</style>
       {/* Header */}
@@ -234,7 +445,18 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
         </button>
       </div>
 
+      {/* Tabs */}
+      <div style={{ background: colours.white, borderBottom: `1px solid ${colours.border}`, padding: "0 24px" }}>
+        <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", gap: 8 }} className="subcon-tabs">
+          <button className={`subcon-tab-btn ${activeTab === "jobs" ? "active" : ""}`} onClick={() => setActiveTab("jobs")}>📋 My Jobs</button>
+          <button className={`subcon-tab-btn ${activeTab === "chemicals" ? "active" : ""}`} onClick={() => setActiveTab("chemicals")}>🧪 Chemical Records</button>
+          <button className={`subcon-tab-btn ${activeTab === "machinery" ? "active" : ""}`} onClick={() => setActiveTab("machinery")}>🚜 Machinery Logs</button>
+        </div>
+      </div>
+
       <div style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
+        {activeTab === "jobs" && (
+          <>
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
           <div style={{ background: colours.white, borderRadius: 16, padding: 20, border: `1px solid ${colours.border}` }}>
@@ -354,6 +576,46 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
                       </div>
                     </div>
                   )}
+
+                  {/* Subcontractor Job Updates */}
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${colours.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: colours.muted, textTransform: "uppercase", marginBottom: 12 }}>📝 Update Progress</div>
+                    <div style={{ display: "grid", gap: 12 }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Change Status</label>
+                        <select
+                          value={selectedJobData.status}
+                          onChange={e => handleUpdateJob(e.target.value)}
+                          disabled={updatingJob}
+                          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }}
+                        >
+                          <option value="Scheduled">Scheduled</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Completed">Completed</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Add Note / Caption</label>
+                        <textarea
+                          value={jobNoteInput}
+                          onChange={e => setJobNoteInput(e.target.value)}
+                          placeholder="What's the status of this job?"
+                          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13, minHeight: 60, resize: "vertical" }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Add Photo (optional)</label>
+                        <input type="file" accept="image/*" onChange={e => setJobPhotoFile(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
+                      </div>
+                      <button
+                        onClick={() => handleUpdateJob()}
+                        disabled={updatingJob || (!jobNoteInput.trim() && !jobPhotoFile)}
+                        style={{ background: colours.teal, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}
+                      >
+                        {updatingJob ? "Saving..." : "Save Progress Update"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Payment Status */}
@@ -495,6 +757,128 @@ export default function SubcontractorPortal({ authUser, onSignOut }) {
                 )}
               </div>
             )}
+          </div>
+        )}
+          </>
+        )}
+
+        {activeTab === "chemicals" && (
+          <div style={{ background: colours.white, borderRadius: 20, padding: 32, border: `1px solid ${colours.border}` }}>
+            <h2 style={{ margin: "0 0 16px", color: colours.purple }}>🧪 Log Chemical Usage</h2>
+            <p style={{ color: colours.muted, marginBottom: 24 }}>Maintain compliance by recording chemical applications on site.</p>
+
+            <div style={{ display: "grid", gap: 16, maxWidth: 600 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Date</label>
+                  <input type="date" value={chemForm.date} onChange={e => setChemForm(p => ({ ...p, date: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Location / Site</label>
+                  <select value={chemForm.propertyId} onChange={e => setChemForm(p => ({ ...p, propertyId: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }}>
+                    <option value="">Select location...</option>
+                    {[...new Set(jobs.map(j => j.location || j.siteAddress).filter(Boolean))].map(loc => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Chemical Product Name</label>
+                <input value={chemForm.chemicalProductName} onChange={e => setChemForm(p => ({ ...p, chemicalProductName: e.target.value }))}
+                  placeholder="e.g. Roundup, Glyphosate 450"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Target Pest/Weed</label>
+                  <input value={chemForm.targetPestOrWeed} onChange={e => setChemForm(p => ({ ...p, targetPestOrWeed: e.target.value }))}
+                    placeholder="e.g. Blackberry, Grass"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Rate Applied</label>
+                  <input value={chemForm.rateApplied} onChange={e => setChemForm(p => ({ ...p, rateApplied: e.target.value }))}
+                    placeholder="e.g. 1L per 100L"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Total Quantity Used</label>
+                <input value={chemForm.totalQuantityUsed} onChange={e => setChemForm(p => ({ ...p, totalQuantityUsed: e.target.value }))}
+                  placeholder="e.g. 500L"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Notes</label>
+                <textarea value={chemForm.notes} onChange={e => setChemForm(p => ({ ...p, notes: e.target.value }))}
+                  placeholder="Weather conditions, specific areas treated..."
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13, minHeight: 80, resize: "vertical" }} />
+              </div>
+
+              <button
+                onClick={handleSaveChem}
+                disabled={savingChem}
+                style={{ background: colours.purple, color: "#fff", border: "none", borderRadius: 12, padding: "14px 24px", fontWeight: 800, fontSize: 15, cursor: "pointer", marginTop: 8 }}
+              >
+                {savingChem ? "Saving..." : "Save Chemical Record"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "machinery" && (
+          <div style={{ background: colours.white, borderRadius: 20, padding: 32, border: `1px solid ${colours.border}` }}>
+            <h2 style={{ margin: "0 0 16px", color: colours.purple }}>🚜 Log Machinery Usage</h2>
+            <p style={{ color: colours.muted, marginBottom: 24 }}>Record usage hours and maintenance notes for plant and equipment.</p>
+
+            <div style={{ display: "grid", gap: 16, maxWidth: 600 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Date</label>
+                  <input type="date" value={machineryForm.date} onChange={e => setMachineryForm(p => ({ ...p, date: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Select Machinery</label>
+                  <select value={machineryForm.assetId} onChange={e => setMachineryForm(p => ({ ...p, assetId: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }}>
+                    <option value="">Choose equipment...</option>
+                    {availableAssets.map(asset => (
+                      <option key={asset.id} value={asset.id}>{asset.name} ({asset.type})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Usage / Meter Hours</label>
+                <input type="number" step="0.1" value={machineryForm.usageHours} onChange={e => setMachineryForm(p => ({ ...p, usageHours: e.target.value }))}
+                  placeholder="e.g. 1245.5"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13 }} />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colours.muted, marginBottom: 4 }}>Notes / Service Performed</label>
+                <textarea value={machineryForm.notes} onChange={e => setMachineryForm(p => ({ ...p, notes: e.target.value }))}
+                  placeholder="Any issues noticed or maintenance performed..."
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${colours.border}`, fontSize: 13, minHeight: 80, resize: "vertical" }} />
+              </div>
+
+              <button
+                onClick={handleSaveMachinery}
+                disabled={savingMachinery}
+                style={{ background: colours.purple, color: "#fff", border: "none", borderRadius: 12, padding: "14px 24px", fontWeight: 800, fontSize: 15, cursor: "pointer", marginTop: 8 }}
+              >
+                {savingMachinery ? "Saving..." : "Save Machinery Log"}
+              </button>
+            </div>
           </div>
         )}
       </div>

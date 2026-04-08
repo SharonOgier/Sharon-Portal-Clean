@@ -266,6 +266,7 @@ export const SUPABASE_TABLES = {
   chemicalRecords: "sas_chemical_records",
   paddockEvents: "sas_paddock_events",
   livestockRecords: "sas_livestock_records",
+  machineryLogs: "sas_machinery_logs",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor

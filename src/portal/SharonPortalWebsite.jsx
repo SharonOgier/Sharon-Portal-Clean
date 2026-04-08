@@ -2545,6 +2545,7 @@ export default function AccountingPortalPrototype() {
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
+      sas_machinery_logs: { setter: null, key: "machinery" },
     };
 
     const parseRow = (row) => {
@@ -2629,6 +2630,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery_logs", filter: `user_id=eq.${uid}` }, handleChange)
       .subscribe();
 
     realtimeChannelRef.current = channel;
