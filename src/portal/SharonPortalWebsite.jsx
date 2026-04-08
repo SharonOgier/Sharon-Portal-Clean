@@ -110,6 +110,8 @@ import ATOTaxFormPage       from "./ATOTaxFormPage";
 import BankReconciliationPage from "./pages/BankReconciliationPage";
 import SubcontractorPortal from "./pages/SubcontractorPortal";
 import TimesheetsPage from "./pages/TimesheetsPage";
+import MachineryPage from "./pages/MachineryPage";
+import SeasonalPlannerPage from "./pages/SeasonalPlannerPage";
 // -----------------------------------------------------------------------------
 
 
@@ -133,6 +135,10 @@ export default function AccountingPortalPrototype() {
   ];
   const PADDOCK_EVENT_QUEUE_KEY = "sas_pending_paddock_events";
   const LIVESTOCK_QUEUE_KEY = "sas_pending_livestock_records";
+  const SEASONAL_TASKS_QUEUE_KEY = "sas_pending_seasonal_tasks";
+  const MACHINERY_SERVICE_QUEUE_KEY = "sas_pending_machinery_service_records";
+  const MACHINERY_BREAKDOWN_QUEUE_KEY = "sas_pending_machinery_breakdowns";
+  const MACHINERY_FUEL_QUEUE_KEY = "sas_pending_machinery_fuel_logs";
 
   const getMimeTypeFromFile = (file) => {
     const explicitType = String(file?.type || "").trim().toLowerCase();
@@ -174,6 +180,11 @@ export default function AccountingPortalPrototype() {
   const [savingBill, setSavingBill] = useState(false);
   const [savingService, setSavingService] = useState(false);
   const [savingIncomeSource, setSavingIncomeSource] = useState(false);
+  const [savingMachinery, setSavingMachinery] = useState(false);
+  const [savingMachineryServiceRecord, setSavingMachineryServiceRecord] = useState(false);
+  const [savingMachineryBreakdown, setSavingMachineryBreakdown] = useState(false);
+  const [savingMachineryFuelLog, setSavingMachineryFuelLog] = useState(false);
+  const [savingSeasonalTask, setSavingSeasonalTask] = useState(false);
   const [savingDocumentEdits, setSavingDocumentEdits] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [billWizardStep, setBillWizardStep] = useState(1);
@@ -281,12 +292,18 @@ export default function AccountingPortalPrototype() {
   const [expenses, setExpenses] = useState(initialExpenses);
   const [incomeSources, setIncomeSources] = useState(initialIncomeSources);
   const [documents, setDocuments] = useState(initialDocuments);
+  const [machinery, setMachinery] = useState([]);
+  const [machineryServiceRecords, setMachineryServiceRecords] = useState([]);
+  const [machineryBreakdowns, setMachineryBreakdowns] = useState([]);
+  const [machineryFuelLogs, setMachineryFuelLogs] = useState([]);
+  const [seasonalTasks, setSeasonalTasks] = useState([]);
   const [documentFile, setDocumentFile] = useState(null);
   const [services, setServices] = useState([]);
 
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [serviceSearch, setServiceSearch] = useState("");
   const [editingServiceId, setEditingServiceId] = useState(null);
+  const [selectedMachineId, setSelectedMachineId] = useState(null);
   const [serviceForm, setServiceForm] = useState({
     name: "",
     gstType: "GST on Income (10%)",
@@ -479,6 +496,10 @@ export default function AccountingPortalPrototype() {
     setQuotes([]);
     setExpenses([]);
     setIncomeSources([]);
+    setMachinery([]);
+    setMachineryServiceRecords([]);
+    setMachineryBreakdowns([]);
+    setMachineryFuelLogs([]);
     setServices([]);
     setDocuments([]);
     setRecurringReminders([]);
@@ -496,6 +517,7 @@ export default function AccountingPortalPrototype() {
       window.localStorage.removeItem("sas_incomeSources");
       window.localStorage.removeItem("sas_services");
       window.localStorage.removeItem("sas_documents");
+      window.localStorage.removeItem("sas_machinery");
       window.localStorage.removeItem(PADDOCK_EVENT_QUEUE_KEY);
       window.localStorage.removeItem(LIVESTOCK_QUEUE_KEY);
     }
@@ -598,6 +620,51 @@ export default function AccountingPortalPrototype() {
     }));
   }, [authUser]);
 
+
+  // Check for machinery service reminders
+  useEffect(() => {
+    if (!hasLoadedUserProfile || machinery.length === 0) return;
+
+    const today = parseLocalDate(todayLocal());
+    const overdue = [];
+    const soon = [];
+
+    machinery.forEach(m => {
+      const records = machineryServiceRecords.filter(r => String(r.machineId) === String(m.id) && !r.archived);
+      if (records.length === 0) return;
+
+      const lastService = [...records].sort((a, b) => b.date.localeCompare(a.date))[0];
+      const lastServiceHours = safeNumber(lastService.hours);
+      const currentHours = safeNumber(m.hoursMeter);
+      const intervalHours = safeNumber(m.serviceIntervalHours);
+      const intervalMonths = safeNumber(m.serviceIntervalMonths);
+
+      const hoursRemaining = intervalHours ? (lastServiceHours + intervalHours - currentHours) : Infinity;
+
+      const lastServiceDate = parseLocalDate(lastService.date);
+      const nextServiceDate = new Date(lastServiceDate);
+      if (intervalMonths) nextServiceDate.setMonth(nextServiceDate.getMonth() + intervalMonths);
+
+      const daysRemaining = intervalMonths ? Math.ceil((nextServiceDate - today) / (1000 * 60 * 60 * 24)) : Infinity;
+
+      if (hoursRemaining <= 0 || daysRemaining <= 0) {
+        overdue.push(m);
+      } else if (hoursRemaining <= 50 || daysRemaining <= 14) {
+        soon.push({ machine: m, hours: hoursRemaining, days: daysRemaining });
+      }
+    });
+
+    if (overdue.length > 0) {
+      overdue.forEach(m => {
+        // Only toast once per session/update
+        const msg = `${m.name} is overdue for service!`;
+        // In a real app we might trigger a Supabase function here for SMS/Email
+        // For now, we'll log that we'd send it
+        console.log(`[Notification] Sending SMS/Email to business owner for ${m.name} overdue`);
+      });
+    }
+  }, [hasLoadedUserProfile, machinery, machineryServiceRecords]);
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const handleResize = () => setIsMobileViewport(window.innerWidth <= 768);
@@ -636,6 +703,7 @@ export default function AccountingPortalPrototype() {
   }, [activePage]);
 
   useEffect(() => {
+
     if (typeof window !== "undefined") {
       const pathName = String(window.location.pathname || "").toLowerCase();
       const search = new URLSearchParams(window.location.search || "");
@@ -879,7 +947,7 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents, rLivestockRecords] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents, rLivestockRecords, rMachinery, rMachineryServiceRecords, rMachineryBreakdowns, rMachineryFuelLogs, rSeasonalTasks] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
@@ -889,6 +957,11 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
+        safeF(SUPABASE_TABLES.machinery),
+        safeF(SUPABASE_TABLES.machineryServiceRecords),
+        safeF(SUPABASE_TABLES.machineryBreakdowns),
+        safeF(SUPABASE_TABLES.machineryFuelLogs),
+        safeF(SUPABASE_TABLES.seasonalTasks),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -911,6 +984,11 @@ export default function AccountingPortalPrototype() {
       setChemicalRecords(Array.isArray(rChemicalRecords) ? rChemicalRecords : []);
       setPaddockEvents(Array.isArray(rPaddockEvents) ? rPaddockEvents : []);
       setLivestockRecords(Array.isArray(rLivestockRecords) ? rLivestockRecords : []);
+      setMachinery(Array.isArray(rMachinery) ? rMachinery : []);
+      setMachineryServiceRecords(Array.isArray(rMachineryServiceRecords) ? rMachineryServiceRecords : []);
+      setMachineryBreakdowns(Array.isArray(rMachineryBreakdowns) ? rMachineryBreakdowns : []);
+      setMachineryFuelLogs(Array.isArray(rMachineryFuelLogs) ? rMachineryFuelLogs : []);
+      setSeasonalTasks(Array.isArray(rSeasonalTasks) ? rSeasonalTasks : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1158,6 +1236,7 @@ export default function AccountingPortalPrototype() {
   };
 
   const fetchCollectionFromDatabase = async (tableName, overrideUserId = null) => {
+
     if (!supabase || !authUser?.id) return [];
     const targetUserId = overrideUserId || activePortalUserId || authUser.id;
 
@@ -1180,6 +1259,7 @@ export default function AccountingPortalPrototype() {
   };
 
   const upsertRecordInDatabase = async (tableName, record) => {
+
     if (!authUser?.id) throw new Error("Please sign in first.");
     const row = buildSupabaseRow(record);
 
@@ -1757,6 +1837,10 @@ export default function AccountingPortalPrototype() {
       setChemicalRecords([]);
       setPaddockEvents([]);
       setLivestockRecords([]);
+      setMachinery([]);
+      setMachineryServiceRecords([]);
+      setMachineryBreakdowns([]);
+      setMachineryFuelLogs([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -2307,6 +2391,7 @@ export default function AccountingPortalPrototype() {
   };
 
   const restorePortalStateFromSupabase = async () => {
+
     if (!supabase || isSupabaseRestoring || !authUser) return;
     setHasLoadedUserProfile(false);
     setIsSupabaseRestoring(true);
@@ -2337,6 +2422,11 @@ export default function AccountingPortalPrototype() {
         remoteChemicalRecords,
         remotePaddockEvents,
         remoteLivestockRecords,
+        remoteMachinery,
+        remoteMachineryServiceRecords,
+        remoteMachineryBreakdowns,
+        remoteMachineryFuelLogs,
+        remoteSeasonalTasks,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2355,6 +2445,11 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
+        safeF(SUPABASE_TABLES.machinery),
+        safeF(SUPABASE_TABLES.machineryServiceRecords),
+        safeF(SUPABASE_TABLES.machineryBreakdowns),
+        safeF(SUPABASE_TABLES.machineryFuelLogs),
+        safeF(SUPABASE_TABLES.seasonalTasks),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2401,6 +2496,11 @@ export default function AccountingPortalPrototype() {
       setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
       setSupplierPriceLists(Array.isArray(remoteSupplierPriceLists) ? remoteSupplierPriceLists : []);
       setChemicalRecords(Array.isArray(remoteChemicalRecords) ? remoteChemicalRecords : []);
+      setMachinery(Array.isArray(remoteMachinery) ? remoteMachinery : []);
+      setMachineryServiceRecords(Array.isArray(remoteMachineryServiceRecords) ? remoteMachineryServiceRecords : []);
+      setMachineryBreakdowns(Array.isArray(remoteMachineryBreakdowns) ? remoteMachineryBreakdowns : []);
+      setMachineryFuelLogs(Array.isArray(remoteMachineryFuelLogs) ? remoteMachineryFuelLogs : []);
+      setSeasonalTasks(Array.isArray(remoteSeasonalTasks) ? remoteSeasonalTasks : []);
       const pendingOfflinePaddockEvents = readPendingPaddockEventQueue();
       const hydratedPaddockEvents = Array.isArray(remotePaddockEvents) ? remotePaddockEvents : [];
       const mergedPaddockEvents = pendingOfflinePaddockEvents.reduce(
@@ -2460,6 +2560,8 @@ export default function AccountingPortalPrototype() {
       if (authUser && hasHydratedSupabaseState.current) {
         flushPendingPaddockEventQueue();
         flushPendingLivestockQueue();
+      flushPendingSeasonalTasksQueue();
+      flushPendingMachineryQueues();
         restorePortalStateFromSupabase();
       }
       setTimeout(() => setShowBackOnline(false), 4000);
@@ -2498,6 +2600,11 @@ export default function AccountingPortalPrototype() {
       sas_chemical_records: { setter: setChemicalRecords, key: "chemical records" },
       sas_paddock_events: { setter: setPaddockEvents, key: "properties" },
       sas_livestock_records: { setter: setLivestockRecords, key: "livestock" },
+      sas_machinery: { setter: setMachinery, key: "machinery" },
+      sas_machinery_service_records: { setter: setMachineryServiceRecords, key: "machinery" },
+      sas_machinery_breakdowns: { setter: setMachineryBreakdowns, key: "machinery" },
+      sas_machinery_fuel_logs: { setter: setMachineryFuelLogs, key: "machinery" },
+      sas_seasonal_tasks: { setter: setSeasonalTasks, key: "seasonal planner" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2582,6 +2689,11 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_chemical_records", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_paddock_events", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_livestock_records", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery_service_records", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery_breakdowns", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_machinery_fuel_logs", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_seasonal_tasks", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -3424,6 +3536,147 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       toast.error(error.message || "Client update failed");
     }
     };
+
+  const saveMachinery = async (payload) => {
+    try {
+      setSavingMachinery(true);
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.machinery, payload);
+      setMachinery((prev) => {
+        const exists = prev.find((m) => String(m.id) === String(saved.id));
+        return exists ? prev.map((m) => String(m.id) === String(saved.id) ? saved : m) : [...prev, saved];
+      });
+      toast.success(payload.id ? "Machinery updated!" : "Machinery added!");
+      setSavingMachinery(false);
+      return saved;
+    } catch (err) {
+      setSavingMachinery(false);
+      toast.error(err.message || "Failed to save machinery");
+      return null;
+    }
+  };
+
+  const deleteMachinery = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.machinery, id);
+      setMachinery((prev) => prev.filter((m) => String(m.id) !== String(id)));
+      toast.success("Machinery removed");
+    } catch (err) {
+      toast.error(err.message || "Failed to remove machinery");
+    }
+  };
+
+  const saveMachineryServiceRecord = async (payload) => {
+    try {
+      setSavingMachineryServiceRecord(true);
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.machineryServiceRecords, payload);
+      setMachineryServiceRecords((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists ? prev.map((r) => String(r.id) === String(saved.id) ? saved : r) : [...prev, saved];
+      });
+      toast.success("Service record saved!");
+      setSavingMachineryServiceRecord(false);
+      return saved;
+    } catch (err) {
+      const offlineId = payload.id || `offline-msr-${Date.now()}`;
+      const offlineRec = { ...payload, id: offlineId, pendingSync: true };
+      setMachineryServiceRecords(prev => {
+        const exists = prev.find(r => String(r.id) === String(offlineId));
+        return exists ? prev.map(r => String(r.id) === String(offlineId) ? offlineRec : r) : [...prev, offlineRec];
+      });
+      const queue = JSON.parse(localStorage.getItem(MACHINERY_SERVICE_QUEUE_KEY) || "[]");
+      localStorage.setItem(MACHINERY_SERVICE_QUEUE_KEY, JSON.stringify([...queue.filter(t => t.id !== offlineId), offlineRec]));
+      setSavingMachineryServiceRecord(false);
+      toast.success("Saved offline. Will sync when back online.");
+      return offlineRec;
+    }
+  };
+
+  const deleteMachineryServiceRecord = async (id) => {
+    try {
+      // Requirements say service records are permanent - archived not deleted.
+      // We handle archiving by setting an 'archived' flag in the record data.
+      const record = machineryServiceRecords.find(r => String(r.id) === String(id));
+      if (!record) return;
+      const archivedRecord = { ...record, archived: true, archivedAt: new Date().toISOString() };
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.machineryServiceRecords, archivedRecord);
+      setMachineryServiceRecords((prev) => prev.map((r) => String(r.id) === String(saved.id) ? saved : r));
+      toast.success("Service record archived");
+    } catch (err) {
+      toast.error(err.message || "Failed to archive service record");
+    }
+  };
+
+  const saveMachineryBreakdown = async (payload) => {
+    try {
+      setSavingMachineryBreakdown(true);
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.machineryBreakdowns, payload);
+      setMachineryBreakdowns((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists ? prev.map((r) => String(r.id) === String(saved.id) ? saved : r) : [...prev, saved];
+      });
+      toast.success("Breakdown logged!");
+      setSavingMachineryBreakdown(false);
+      return saved;
+    } catch (err) {
+      const offlineId = payload.id || `offline-mbr-${Date.now()}`;
+      const offlineRec = { ...payload, id: offlineId, pendingSync: true };
+      setMachineryBreakdowns(prev => {
+        const exists = prev.find(r => String(r.id) === String(offlineId));
+        return exists ? prev.map(r => String(r.id) === String(offlineId) ? offlineRec : r) : [...prev, offlineRec];
+      });
+      const queue = JSON.parse(localStorage.getItem(MACHINERY_BREAKDOWN_QUEUE_KEY) || "[]");
+      localStorage.setItem(MACHINERY_BREAKDOWN_QUEUE_KEY, JSON.stringify([...queue.filter(t => t.id !== offlineId), offlineRec]));
+      setSavingMachineryBreakdown(false);
+      toast.success("Saved offline. Will sync when back online.");
+      return offlineRec;
+    }
+  };
+
+  const deleteMachineryBreakdown = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.machineryBreakdowns, id);
+      setMachineryBreakdowns((prev) => prev.filter((r) => String(r.id) !== String(id)));
+      toast.success("Breakdown record removed");
+    } catch (err) {
+      toast.error(err.message || "Failed to remove breakdown record");
+    }
+  };
+
+  const saveMachineryFuelLog = async (payload) => {
+    try {
+      setSavingMachineryFuelLog(true);
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.machineryFuelLogs, payload);
+      setMachineryFuelLogs((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists ? prev.map((r) => String(r.id) === String(saved.id) ? saved : r) : [...prev, saved];
+      });
+      toast.success("Fuel usage logged!");
+      setSavingMachineryFuelLog(false);
+      return saved;
+    } catch (err) {
+      const offlineId = payload.id || `offline-mfl-${Date.now()}`;
+      const offlineRec = { ...payload, id: offlineId, pendingSync: true };
+      setMachineryFuelLogs(prev => {
+        const exists = prev.find(r => String(r.id) === String(offlineId));
+        return exists ? prev.map(r => String(r.id) === String(offlineId) ? offlineRec : r) : [...prev, offlineRec];
+      });
+      const queue = JSON.parse(localStorage.getItem(MACHINERY_FUEL_QUEUE_KEY) || "[]");
+      localStorage.setItem(MACHINERY_FUEL_QUEUE_KEY, JSON.stringify([...queue.filter(t => t.id !== offlineId), offlineRec]));
+      setSavingMachineryFuelLog(false);
+      toast.success("Saved offline. Will sync when back online.");
+      return offlineRec;
+    }
+  };
+
+  const deleteMachineryFuelLog = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.machineryFuelLogs, id);
+      setMachineryFuelLogs((prev) => prev.filter((r) => String(r.id) !== String(id)));
+      toast.success("Fuel log removed");
+    } catch (err) {
+      toast.error(err.message || "Failed to remove fuel log");
+    }
+  };
 
     const saveExpenseEdits = async () => {
     if (!expenseEditorForm) return;
@@ -4324,6 +4577,41 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       },
     });
     };
+
+  const saveSeasonalTask = async (payload) => {
+    try {
+      setSavingSeasonalTask(true);
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.seasonalTasks, payload);
+      setSeasonalTasks((prev) => {
+        const exists = prev.find((t) => String(t.id) === String(saved.id));
+        return exists ? prev.map((t) => (String(t.id) === String(saved.id) ? saved : t)) : [...prev, saved];
+      });
+      setSavingSeasonalTask(false);
+      return saved;
+    } catch (err) {
+      const offlineId = payload.id || `offline-st-${Date.now()}`;
+      const offlineTask = { ...payload, id: offlineId, pendingSync: true };
+      setSeasonalTasks(prev => {
+        const exists = prev.find(t => String(t.id) === String(offlineId));
+        return exists ? prev.map(t => String(t.id) === String(offlineId) ? offlineTask : t) : [...prev, offlineTask];
+      });
+      const queue = JSON.parse(localStorage.getItem(SEASONAL_TASKS_QUEUE_KEY) || "[]");
+      localStorage.setItem(SEASONAL_TASKS_QUEUE_KEY, JSON.stringify([...queue.filter(t => t.id !== offlineId), offlineTask]));
+      setSavingSeasonalTask(false);
+      toast.success("Saved offline. Will sync when back online.");
+      return offlineTask;
+    }
+  };
+
+  const deleteSeasonalTask = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.seasonalTasks, id);
+      setSeasonalTasks((prev) => prev.filter((t) => String(t.id) !== String(id)));
+      toast.success("Task removed from planner");
+    } catch (err) {
+      toast.error(err.message || "Failed to delete task");
+    }
+  };
     const deleteQuote = (id) => {
     confirm({ title: "Delete quote", message: "This quote will be permanently deleted.", confirmLabel: "Delete", onConfirm: async () => {
     try {
@@ -4366,6 +4654,43 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
       },
     });
     };
+  const flushPendingSeasonalTasksQueue = async () => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    const queue = JSON.parse(window.localStorage.getItem(SEASONAL_TASKS_QUEUE_KEY) || "[]");
+    if (!queue.length) return;
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        const toSave = { ...item };
+        if (!isValidDbId(toSave.id)) delete toSave.id;
+        await upsertRecordInDatabase(SUPABASE_TABLES.seasonalTasks, toSave);
+      } catch (err) { remaining.push(item); }
+    }
+    window.localStorage.setItem(SEASONAL_TASKS_QUEUE_KEY, JSON.stringify(remaining));
+  };
+
+  const flushPendingMachineryQueues = async () => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    const tables = [
+      { key: MACHINERY_SERVICE_QUEUE_KEY, table: SUPABASE_TABLES.machineryServiceRecords },
+      { key: MACHINERY_BREAKDOWN_QUEUE_KEY, table: SUPABASE_TABLES.machineryBreakdowns },
+      { key: MACHINERY_FUEL_QUEUE_KEY, table: SUPABASE_TABLES.machineryFuelLogs }
+    ];
+    for (const { key, table } of tables) {
+      const queue = JSON.parse(window.localStorage.getItem(key) || "[]");
+      if (!queue.length) continue;
+      const remaining = [];
+      for (const item of queue) {
+        try {
+          const toSave = { ...item };
+          if (!isValidDbId(toSave.id)) delete toSave.id;
+          await upsertRecordInDatabase(table, toSave);
+        } catch (err) { remaining.push(item); }
+      }
+      window.localStorage.setItem(key, JSON.stringify(remaining));
+    }
+  };
+
     const deleteIncomeSource = (id) => {
     confirm({ title: "Delete income source", message: "This income source will be permanently deleted.", confirmLabel: "Delete", onConfirm: async () => {
     try {
@@ -4854,6 +5179,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
     );
     }
 
+    console.log("Rendering core. authUser:", !!authUser, "authReady:", authReady, "setupComplete:", setupComplete);
     if (!authUser) {
     return (
       <AuthPage
@@ -5286,7 +5612,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
                       "dashboard": "⬡", "financial insights": "📊", "invoices": "📄", "quotes": "📋",
                       "clients": "👥", "services": "⚙", "expenses": "💳", "bills / payables": "🧾",
                       "income sources": "💰", "documents": "📁", "properties": "🏠", "scheduling": "📅", "bank reconciliation": "🏦",
-                      "bas report": "📑", "ato tax form": "🏛", "tax estimator": "🧮", "settings": "⚙",
+                      "bas report": "📑", "ato tax form": "🏛", "tax estimator": "🧮", "seasonal planner": "🗓️", "settings": "⚙",
                     };
                     return (
                       <button
@@ -5404,6 +5730,9 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               saveAllCurrentStateToSupabase={saveAllCurrentStateToSupabase}
                supabaseSyncStatus={supabaseSyncStatus} getClientName={getClientName}
                properties={properties} jobs={jobs}
+               machinery={machinery} machineryServiceRecords={machineryServiceRecords}
+               setSelectedMachineId={setSelectedMachineId}
+               seasonalTasks={seasonalTasks}
             />}
             {activePage === "financial insights" && <FinancialInsightsPage
               profile={profile} totals={totals} invoiceAllocations={invoiceAllocations}
@@ -5623,6 +5952,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}
               recurringReminders={recurringReminders}
+              seasonalTasks={seasonalTasks}
               supplierPriceLists={supplierPriceLists}
               quotes={quotes} invoices={invoices}
               colours={colours} cardStyle={cardStyle}
@@ -5734,6 +6064,51 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               currency={currency} formatDateAU={formatDateAU} safeNumber={safeNumber}
               DashboardHero={DashboardHero} SectionCard={SectionCard}
               DataTable={DataTable} EmptyState={EmptyState}
+            />}
+            {activePage === "machinery" && <MachineryPage
+              machinery={machinery}
+              machineryServiceRecords={machineryServiceRecords}
+              machineryBreakdowns={machineryBreakdowns}
+              machineryFuelLogs={machineryFuelLogs}
+              savingMachinery={savingMachinery}
+              savingMachineryServiceRecord={savingMachineryServiceRecord}
+              savingMachineryBreakdown={savingMachineryBreakdown}
+              savingMachineryFuelLog={savingMachineryFuelLog}
+              saveMachinery={saveMachinery}
+              deleteMachinery={deleteMachinery}
+              saveMachineryServiceRecord={saveMachineryServiceRecord}
+              deleteMachineryServiceRecord={deleteMachineryServiceRecord}
+              saveMachineryBreakdown={saveMachineryBreakdown}
+              deleteMachineryBreakdown={deleteMachineryBreakdown}
+              saveMachineryFuelLog={saveMachineryFuelLog}
+              deleteMachineryFuelLog={deleteMachineryFuelLog}
+              selectedMachineId={selectedMachineId}
+              setSelectedMachineId={setSelectedMachineId}
+              colours={colours} cardStyle={cardStyle}
+              buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
+              inputStyle={inputStyle} labelStyle={labelStyle}
+              currency={currency} formatDateAU={formatDateAU} safeNumber={safeNumber}
+              todayLocal={todayLocal}
+              DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
+              SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
+              confirm={confirm}
+              uploadReceiptToSupabase={uploadReceiptToSupabase}
+              toast={toast}
+            />}
+            {activePage === "seasonal planner" && <SeasonalPlannerPage
+              seasonalTasks={seasonalTasks}
+              saveSeasonalTask={saveSeasonalTask}
+              deleteSeasonalTask={deleteSeasonalTask}
+              properties={properties}
+              clients={clients}
+              saveJob={saveJob}
+              colours={colours} cardStyle={cardStyle}
+              buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
+              inputStyle={inputStyle} labelStyle={labelStyle}
+              formatDateAU={formatDateAU} todayLocal={todayLocal}
+              SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
+              confirm={confirm} toast={toast}
+              setActivePage={setActivePage}
             />}
             {activePage === "ato tax form" && (
               <div className="sas-inline-page-card">

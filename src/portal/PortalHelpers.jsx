@@ -40,7 +40,7 @@ const NAV_ITEMS_BY_TYPE = {
     "tax estimator", "settings",
   ],
   tradie: ["scheduling", "assets", "properties", "jobs report"],
-  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "jobs report"],
+  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "machinery", "seasonal planner", "jobs report"],
   smallbusiness: ["scheduling"],
 };
 
@@ -51,7 +51,7 @@ const NAV_SECTIONS_TEMPLATE = [
   },
   {
     title: "Workspace",
-    items: ["clients", "services", "assets", "properties", "chemical records", "livestock", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
+    items: ["clients", "services", "assets", "properties", "chemical records", "livestock", "machinery", "seasonal planner", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
   },
   {
     title: "Admin",
@@ -81,6 +81,7 @@ const NAV_LABELS_BASE = {
   "bas report": "BAS Report",
   "ato tax form": "ATO Tax Form",
   "tax estimator": "Tax Estimator",
+  "seasonal planner": "Seasonal Planner",
   settings: "Settings",
 };
 
@@ -97,6 +98,8 @@ const NAV_LABEL_OVERRIDES = {
     assets: "Farm Assets & Depreciation",
     "chemical records": "Chemical Use Records",
     livestock: "Livestock",
+    machinery: "Machinery & Equipment",
+    "seasonal planner": "Seasonal Task Planner",
     "jobs report": "Tasks Report",
   },
   smallbusiness: {
@@ -264,6 +267,11 @@ export const SUPABASE_TABLES = {
   chemicalRecords: "sas_chemical_records",
   paddockEvents: "sas_paddock_events",
   livestockRecords: "sas_livestock_records",
+  machinery: "sas_machinery",
+  machineryServiceRecords: "sas_machinery_service_records",
+  machineryBreakdowns: "sas_machinery_breakdowns",
+  machineryFuelLogs: "sas_machinery_fuel_logs",
+  seasonalTasks: "sas_seasonal_tasks",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
@@ -392,7 +400,72 @@ create policy if not exists "documents_delete_own" on sas_documents for delete u
 create policy if not exists "suppliers_select_own" on sas_suppliers for select using (auth.uid()::text = user_id);
 create policy if not exists "suppliers_insert_own" on sas_suppliers for insert with check (auth.uid()::text = user_id);
 create policy if not exists "suppliers_update_own" on sas_suppliers for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
-create policy if not exists "suppliers_delete_own" on sas_suppliers for delete using (auth.uid()::text = user_id);`;
+create policy if not exists "suppliers_delete_own" on sas_suppliers for delete using (auth.uid()::text = user_id);
+
+create table if not exists sas_machinery (
+  id bigint primary key,
+  user_id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+create index if not exists sas_machinery_user_id_idx on sas_machinery (user_id);
+alter table sas_machinery enable row level security;
+create policy if not exists "machinery_select_own" on sas_machinery for select using (auth.uid()::text = user_id);
+create policy if not exists "machinery_insert_own" on sas_machinery for insert with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_update_own" on sas_machinery for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_delete_own" on sas_machinery for delete using (auth.uid()::text = user_id);
+
+create table if not exists sas_machinery_service_records (
+  id bigint primary key,
+  user_id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+create index if not exists sas_machinery_service_records_user_id_idx on sas_machinery_service_records (user_id);
+alter table sas_machinery_service_records enable row level security;
+create policy if not exists "machinery_service_records_select_own" on sas_machinery_service_records for select using (auth.uid()::text = user_id);
+create policy if not exists "machinery_service_records_insert_own" on sas_machinery_service_records for insert with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_service_records_update_own" on sas_machinery_service_records for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_service_records_delete_own" on sas_machinery_service_records for delete using (auth.uid()::text = user_id);
+
+create table if not exists sas_machinery_breakdowns (
+  id bigint primary key,
+  user_id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+create index if not exists sas_machinery_breakdowns_user_id_idx on sas_machinery_breakdowns (user_id);
+alter table sas_machinery_breakdowns enable row level security;
+create policy if not exists "machinery_breakdowns_select_own" on sas_machinery_breakdowns for select using (auth.uid()::text = user_id);
+create policy if not exists "machinery_breakdowns_insert_own" on sas_machinery_breakdowns for insert with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_breakdowns_update_own" on sas_machinery_breakdowns for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_breakdowns_delete_own" on sas_machinery_breakdowns for delete using (auth.uid()::text = user_id);
+
+create table if not exists sas_machinery_fuel_logs (
+  id bigint primary key,
+  user_id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+create index if not exists sas_machinery_fuel_logs_user_id_idx on sas_machinery_fuel_logs (user_id);
+alter table sas_machinery_fuel_logs enable row level security;
+create policy if not exists "machinery_fuel_logs_select_own" on sas_machinery_fuel_logs for select using (auth.uid()::text = user_id);
+create policy if not exists "machinery_fuel_logs_insert_own" on sas_machinery_fuel_logs for insert with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_fuel_logs_update_own" on sas_machinery_fuel_logs for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+create policy if not exists "machinery_fuel_logs_delete_own" on sas_machinery_fuel_logs for delete using (auth.uid()::text = user_id);
+
+create table if not exists sas_seasonal_tasks (
+  id bigint primary key,
+  user_id text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+create index if not exists sas_seasonal_tasks_user_id_idx on sas_seasonal_tasks (user_id);
+alter table sas_seasonal_tasks enable row level security;
+create policy if not exists "seasonal_tasks_select_own" on sas_seasonal_tasks for select using (auth.uid()::text = user_id);
+create policy if not exists "seasonal_tasks_insert_own" on sas_seasonal_tasks for insert with check (auth.uid()::text = user_id);
+create policy if not exists "seasonal_tasks_update_own" on sas_seasonal_tasks for update using (auth.uid()::text = user_id) with check (auth.uid()::text = user_id);
+create policy if not exists "seasonal_tasks_delete_own" on sas_seasonal_tasks for delete using (auth.uid()::text = user_id);`;
 
 export const GST_TYPE_OPTIONS = [
   { value: "GST on Income (10%)", label: "GST on Income (10%)" },

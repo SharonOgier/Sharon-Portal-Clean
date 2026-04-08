@@ -52,6 +52,10 @@ export default function DashboardPage(props) {
     saveAllCurrentStateToSupabase = () => {},
     supabaseSyncStatus = "",
     getClientName = () => "",
+    machinery = [],
+    machineryServiceRecords = [],
+    setSelectedMachineId = () => {},
+    seasonalTasks = [],
   } = props;
 
   const { businessType, t } = useTerminology();
@@ -167,13 +171,125 @@ export default function DashboardPage(props) {
       )}
 
       {businessType === "farmer" && (
-        <SectionCard title="🚜 Property Overview" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("properties")}>View {t("properties")} →</button>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-            <ActionHubCard icon="🏡" title={t("properties")} description={`${(props.properties || []).length || 0} registered`} buttonLabel={`View ${t("properties").toLowerCase()}`} onClick={() => setActivePage("properties")} tone={colours.teal} />
-            <ActionHubCard icon="📋" title={`Active ${t("jobs")}`} description="Seasonal tasks and ongoing work" buttonLabel={`View ${t("workPlanner")}`} onClick={() => setActivePage("scheduling")} tone={colours.purple} />
-            <ActionHubCard icon="🤝" title={t("subcontractors")} description={`${clients.filter(c => (c.roles || []).includes("subcontractor")).length} active`} buttonLabel={`View ${t("subcontractors").toLowerCase()}`} onClick={() => setActivePage("clients")} tone="#EA580C" />
-          </div>
-        </SectionCard>
+        <>
+          <SectionCard title="🚜 Property Overview" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("properties")}>View {t("properties")} →</button>}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
+              <ActionHubCard icon="🏡" title={t("properties")} description={`${(props.properties || []).length || 0} registered`} buttonLabel={`View ${t("properties").toLowerCase()}`} onClick={() => setActivePage("properties")} tone={colours.teal} />
+              <ActionHubCard icon="📋" title={`Active ${t("jobs")}`} description="Seasonal tasks and ongoing work" buttonLabel={`View ${t("workPlanner")}`} onClick={() => setActivePage("scheduling")} tone={colours.purple} />
+              <ActionHubCard icon="🤝" title={t("subcontractors")} description={`${clients.filter(c => (c.roles || []).includes("subcontractor")).length} active`} buttonLabel={`View ${t("subcontractors").toLowerCase()}`} onClick={() => setActivePage("clients")} tone="#EA580C" />
+            </div>
+          </SectionCard>
+
+          {(() => {
+            const overdue = machinery.filter(m => {
+              const records = machineryServiceRecords.filter(r => String(r.machineId) === String(m.id) && !r.archived);
+              if (records.length === 0) return false;
+              const last = [...records].sort((a, b) => b.date.localeCompare(a.date))[0];
+              const intervalHours = Number(m.serviceIntervalHours) || 0;
+              const intervalMonths = Number(m.serviceIntervalMonths) || 0;
+
+              if (intervalHours && (Number(m.hoursMeter) >= Number(last.hours) + intervalHours)) return true;
+              if (intervalMonths) {
+                const nextDate = new Date(last.date);
+                nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+                if (nextDate <= new Date()) return true;
+              }
+              return false;
+            });
+
+            const soon = machinery.filter(m => {
+              const records = machineryServiceRecords.filter(r => String(r.machineId) === String(m.id) && !r.archived);
+              if (records.length === 0) return false;
+              const last = [...records].sort((a, b) => b.date.localeCompare(a.date))[0];
+              const intervalHours = Number(m.serviceIntervalHours) || 0;
+              const intervalMonths = Number(m.serviceIntervalMonths) || 0;
+
+              if (intervalHours) {
+                const remaining = (Number(last.hours) + intervalHours) - Number(m.hoursMeter);
+                if (remaining > 0 && remaining <= 50) return true;
+              }
+              if (intervalMonths) {
+                const nextDate = new Date(last.date);
+                nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+                const days = Math.ceil((nextDate - new Date()) / 86400000);
+                if (days > 0 && days <= 14) return true;
+              }
+              return false;
+            }).filter(m => !overdue.find(om => om.id === m.id));
+
+            if (overdue.length === 0 && soon.length === 0) return null;
+
+            return (
+              <SectionCard title="🔧 Machinery Service Alerts" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("machinery")}>Manage Fleet →</button>}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {overdue.map(m => (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 12, background: "#FEF2F2", border: "1px solid #FECACA" }}>
+                      <span style={{ fontSize: 18 }}>🚨</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#991B1B" }}>{m.name} is overdue for service</div>
+                        <div style={{ fontSize: 12, color: "#B91C1C" }}>Meter: {m.hoursMeter} hrs/km</div>
+                      </div>
+                      <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 12px" }} onClick={() => { setSelectedMachineId?.(m.id); setActivePage("machinery"); }}>View</button>
+                    </div>
+                  ))}
+                  {soon.map(m => (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 12, background: "#FFF7ED", border: "1px solid #FED7AA" }}>
+                      <span style={{ fontSize: 18 }}>⚠️</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#92400E" }}>{m.name} service due soon</div>
+                        <div style={{ fontSize: 12, color: "#A16207" }}>Meter: {m.hoursMeter} hrs/km</div>
+                      </div>
+                      <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 12px" }} onClick={() => { setSelectedMachineId?.(m.id); setActivePage("machinery"); }}>View</button>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            );
+          })()}
+
+          {(() => {
+            const currentMonth = new Date().getMonth();
+            const upcoming = seasonalTasks
+              .filter(t => !t.paused)
+              .map(t => {
+                // Find next due month
+                const dueMonths = (t.months || []).sort((a, b) => a - b);
+                let nextMonth = dueMonths.find(m => m >= currentMonth);
+                if (nextMonth === undefined) nextMonth = dueMonths[0]; // Next year
+
+                let days = 0;
+                const now = new Date();
+                const target = new Date(now.getFullYear(), nextMonth, 1);
+                if (target < now) target.setFullYear(target.getFullYear() + 1);
+                days = Math.ceil((target - now) / 86400000);
+
+                return { ...t, nextMonth, days };
+              })
+              .sort((a, b) => a.days - b.days)
+              .slice(0, 3);
+
+            if (upcoming.length === 0) return null;
+
+            return (
+              <SectionCard title="📅 Upcoming Farm Tasks" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("seasonal planner")}>Full Planner →</button>}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {upcoming.map(t => (
+                    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderRadius: 12, background: colours.bg, border: `1px solid ${colours.border}` }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: colours.lightPurple, display: "grid", placeItems: "center", fontWeight: 800, color: colours.purple, fontSize: 12 }}>
+                        {t.days}d
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</div>
+                        <div style={{ fontSize: 11, color: colours.muted }}>Scheduled for {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.nextMonth]}</div>
+                      </div>
+                      <button style={{ ...buttonSecondary, fontSize: 12, padding: "6px 12px" }} onClick={() => setActivePage("seasonal planner")}>View</button>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            );
+          })()}
+        </>
       )}
 
       {businessType === "smallbusiness" && (
