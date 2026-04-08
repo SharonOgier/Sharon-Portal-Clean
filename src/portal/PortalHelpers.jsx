@@ -40,7 +40,7 @@ const NAV_ITEMS_BY_TYPE = {
     "tax estimator", "settings",
   ],
   tradie: ["scheduling", "assets", "properties", "jobs report"],
-  farmer: ["scheduling", "assets", "properties", "chemical records", "jobs report"],
+  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "jobs report"],
   smallbusiness: ["scheduling"],
 };
 
@@ -51,7 +51,7 @@ const NAV_SECTIONS_TEMPLATE = [
   },
   {
     title: "Workspace",
-    items: ["clients", "services", "assets", "properties", "chemical records", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
+    items: ["clients", "services", "assets", "properties", "chemical records", "livestock", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
   },
   {
     title: "Admin",
@@ -73,6 +73,7 @@ const NAV_LABELS_BASE = {
   assets: "Assets & Depreciation",
   properties: "Properties",
   "chemical records": "Chemical Use Records",
+  livestock: "Livestock",
   scheduling: "Scheduling",
   timesheets: "Timesheets",
   "bank reconciliation": "Bank Reconciliation",
@@ -95,6 +96,7 @@ const NAV_LABEL_OVERRIDES = {
     properties: "Properties & Paddocks",
     assets: "Farm Assets & Depreciation",
     "chemical records": "Chemical Use Records",
+    livestock: "Livestock",
     "jobs report": "Tasks Report",
   },
   smallbusiness: {
@@ -261,6 +263,7 @@ export const SUPABASE_TABLES = {
   supplierPriceLists: "sas_supplier_price_lists",
   chemicalRecords: "sas_chemical_records",
   paddockEvents: "sas_paddock_events",
+  livestockRecords: "sas_livestock_records",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
