@@ -2368,6 +2368,8 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
+        safeF(SUPABASE_TABLES.paddockCosts),
+        safeF(SUPABASE_TABLES.mobCosts),
       ]);
       hasHydratedSupabaseState.current = true;
 
