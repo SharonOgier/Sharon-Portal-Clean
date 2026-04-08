@@ -101,6 +101,7 @@ import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
 import IncomeSourcesPage    from "./pages/IncomeSourcesPage";
 import DocumentsPage        from "./pages/DocumentsPage";
+import ProfitDashboardPage  from "./pages/ProfitDashboardPage";
 import SetupWizardPage      from "./pages/SetupWizardPage";
 import AuthPage             from "./pages/AuthPage";
 import BASReportPage        from "./pages/BASReportPage";
@@ -192,6 +193,8 @@ export default function AccountingPortalPrototype() {
   const [chemicalRecords, setChemicalRecords] = useState([]);
   const [paddockEvents, setPaddockEvents] = useState([]);
   const [livestockRecords, setLivestockRecords] = useState([]);
+  const [paddockCosts, setPaddockCosts] = useState([]);
+  const [mobCosts, setMobCosts] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -486,6 +489,8 @@ export default function AccountingPortalPrototype() {
     setChemicalRecords([]);
     setPaddockEvents([]);
     setLivestockRecords([]);
+    setPaddockCosts([]);
+    setMobCosts([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -879,7 +884,7 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents, rLivestockRecords] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents, rLivestockRecords, rPaddockCosts, rMobCosts] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
@@ -889,6 +894,8 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
+        safeF(SUPABASE_TABLES.paddockCosts),
+        safeF(SUPABASE_TABLES.mobCosts),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -911,6 +918,8 @@ export default function AccountingPortalPrototype() {
       setChemicalRecords(Array.isArray(rChemicalRecords) ? rChemicalRecords : []);
       setPaddockEvents(Array.isArray(rPaddockEvents) ? rPaddockEvents : []);
       setLivestockRecords(Array.isArray(rLivestockRecords) ? rLivestockRecords : []);
+      setPaddockCosts(Array.isArray(rPaddockCosts) ? rPaddockCosts : []);
+      setMobCosts(Array.isArray(rMobCosts) ? rMobCosts : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -2282,6 +2291,8 @@ export default function AccountingPortalPrototype() {
         { name: "chemical records", items: chemicalRecords, table: SUPABASE_TABLES.chemicalRecords },
         { name: "paddock events", items: paddockEvents, table: SUPABASE_TABLES.paddockEvents },
         { name: "livestock records", items: livestockRecords, table: SUPABASE_TABLES.livestockRecords },
+        { name: "paddock costs", items: paddockCosts, table: SUPABASE_TABLES.paddockCosts },
+        { name: "mob costs", items: mobCosts, table: SUPABASE_TABLES.mobCosts },
       ];
 
       const saveResults = await Promise.all(
@@ -2337,6 +2348,8 @@ export default function AccountingPortalPrototype() {
         remoteChemicalRecords,
         remotePaddockEvents,
         remoteLivestockRecords,
+        remotePaddockCosts,
+        remoteMobCosts,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2355,6 +2368,8 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
         safeF(SUPABASE_TABLES.livestockRecords),
+        safeF(SUPABASE_TABLES.paddockCosts),
+        safeF(SUPABASE_TABLES.mobCosts),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2415,6 +2430,8 @@ export default function AccountingPortalPrototype() {
         hydratedLivestock
       );
       setLivestockRecords(mergedLivestock);
+      setPaddockCosts(Array.isArray(remotePaddockCosts) ? remotePaddockCosts : []);
+      setMobCosts(Array.isArray(remoteMobCosts) ? remoteMobCosts : []);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2498,6 +2515,8 @@ export default function AccountingPortalPrototype() {
       sas_chemical_records: { setter: setChemicalRecords, key: "chemical records" },
       sas_paddock_events: { setter: setPaddockEvents, key: "properties" },
       sas_livestock_records: { setter: setLivestockRecords, key: "livestock" },
+      sas_paddock_costs:   { setter: setPaddockCosts,    key: "profit dashboard" },
+      sas_mob_costs:       { setter: setMobCosts,        key: "profit dashboard" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2582,6 +2601,8 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_chemical_records", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_paddock_events", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_livestock_records", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_paddock_costs", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_mob_costs", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5286,7 +5307,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
                       "dashboard": "⬡", "financial insights": "📊", "invoices": "📄", "quotes": "📋",
                       "clients": "👥", "services": "⚙", "expenses": "💳", "bills / payables": "🧾",
                       "income sources": "💰", "documents": "📁", "properties": "🏠", "scheduling": "📅", "bank reconciliation": "🏦",
-                      "bas report": "📑", "ato tax form": "🏛", "tax estimator": "🧮", "settings": "⚙",
+                      "bas report": "📑", "ato tax form": "🏛", "tax estimator": "🧮", "profit dashboard": "📈", "settings": "⚙",
                     };
                     return (
                       <button
@@ -5365,7 +5386,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
                   "income sources": "💰", "documents": "📁", "properties": "🏠",
                   "scheduling": "📅", "bank reconciliation": "🏦", "bas report": "📑",
                   "ato tax form": "🏛", "tax estimator": "🧮", "assets": "📦",
-                  "jobs report": "📋",
+                  "jobs report": "📋", "profit dashboard": "📈",
                 };
                 return (
                   <UpgradePrompt
@@ -5576,6 +5597,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               properties={properties} clients={clients}
               chemicalRecords={chemicalRecords}
               paddockEvents={paddockEvents}
+              paddockCosts={paddockCosts}
               colours={colours} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
               inputStyle={inputStyle} labelStyle={labelStyle}
@@ -5585,6 +5607,8 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               saveProperty={saveProperty} deleteProperty={deleteProperty} confirm={confirm}
               savePaddockEvent={savePaddockEvent}
               archivePaddockEvent={archivePaddockEvent}
+              upsertRecord={upsertRecordInDatabase}
+              deleteRecord={deleteRecordFromDatabase}
               setActivePage={setActivePage} jobs={jobs}
               formatDateAU={formatDateAU}
             />}
@@ -5608,6 +5632,7 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             />}
             {activePage === "livestock" && <LivestockPage
               livestockRecords={livestockRecords}
+              mobCosts={mobCosts}
               properties={properties}
               chemicalRecords={chemicalRecords}
               colours={colours} cardStyle={cardStyle}
@@ -5617,6 +5642,8 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
               saveLivestockRecord={saveLivestockRecord}
               archiveLivestockRecord={archiveLivestockRecord}
+              upsertRecord={upsertRecordInDatabase}
+              deleteRecord={deleteRecordFromDatabase}
               formatDateAU={formatDateAU}
               confirm={confirm}
             />}
@@ -5780,6 +5807,20 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
                 />
               </div>
             )}
+            {activePage === "profit dashboard" && <ProfitDashboardPage
+              profile={profile}
+              livestockRecords={livestockRecords}
+              mobCosts={mobCosts}
+              paddockCosts={paddockCosts}
+              properties={properties}
+              colours={colours} cardStyle={cardStyle}
+              buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
+              inputStyle={inputStyle} labelStyle={labelStyle}
+              currency={currency} safeNumber={safeNumber}
+              DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
+              SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
+              formatDateAU={formatDateAU}
+            />}
             {activePage === "settings" && <SettingsPage
               profile={profile} setProfile={setProfile}
               activeSettingsTab={activeSettingsTab} setActiveSettingsTab={setActiveSettingsTab}

@@ -40,7 +40,7 @@ const NAV_ITEMS_BY_TYPE = {
     "tax estimator", "settings",
   ],
   tradie: ["scheduling", "assets", "properties", "jobs report"],
-  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "jobs report"],
+  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "jobs report", "profit dashboard"],
   smallbusiness: ["scheduling"],
 };
 
@@ -55,7 +55,7 @@ const NAV_SECTIONS_TEMPLATE = [
   },
   {
     title: "Admin",
-    items: ["bank reconciliation", "jobs report", "bas report", "ato tax form", "tax estimator", "settings"],
+    items: ["bank reconciliation", "jobs report", "profit dashboard", "bas report", "ato tax form", "tax estimator", "settings"],
   },
 ];
 
@@ -81,6 +81,7 @@ const NAV_LABELS_BASE = {
   "bas report": "BAS Report",
   "ato tax form": "ATO Tax Form",
   "tax estimator": "Tax Estimator",
+  "profit dashboard": "Profit Dashboard",
   settings: "Settings",
 };
 
@@ -264,6 +265,8 @@ export const SUPABASE_TABLES = {
   chemicalRecords: "sas_chemical_records",
   paddockEvents: "sas_paddock_events",
   livestockRecords: "sas_livestock_records",
+  paddockCosts: "sas_paddock_costs",
+  mobCosts: "sas_mob_costs",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
