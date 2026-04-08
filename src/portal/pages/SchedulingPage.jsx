@@ -38,6 +38,17 @@ const getWeekDates = (date) => {
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS_SHORT = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const REMINDER_RECURRENCE_OPTIONS = ["Monthly", "Quarterly", "Every 6 months", "Annually", "Custom"];
+
+const recurrenceMonths = (interval, customMonths = 1) => {
+  const key = String(interval || "").toLowerCase();
+  if (key === "monthly") return 1;
+  if (key === "quarterly") return 3;
+  if (key === "every 6 months") return 6;
+  if (key === "annually") return 12;
+  if (key === "custom") return Math.max(1, Number(customMonths || 1));
+  return 1;
+};
 
 /* ─── status badge ────────────────────────────────────────────────────── */
 const StatusBadge = ({ status, colours }) => {
@@ -620,10 +631,11 @@ const calcNextDate = (fromDate, freq) => {
 };
 
 export default function SchedulingPage({
-  jobs = [], clients = [], properties = [], quotes = [], invoices = [], colours: c, cardStyle, buttonPrimary, buttonSecondary,
+  jobs = [], clients = [], properties = [], recurringReminders = [], quotes = [], invoices = [], colours: c, cardStyle, buttonPrimary, buttonSecondary,
   inputStyle, labelStyle, DashboardHero, InsightChip, MetricCard, SectionCard, DataTable, EmptyState,
   saveJob, deleteJob, confirm, setActivePage, currency = (v) => `$${Number(v||0).toFixed(2)}`,
   authUser, profile = {}, createInvoiceFromJob,
+  saveRecurringReminder, deleteRecurringReminder, sendRecurringReminderNow,
 }) {
   const colours = c;
   // Filter out admin/overhead pseudo-jobs from scheduling
@@ -637,6 +649,10 @@ export default function SchedulingPage({
   const [detailTab, setDetailTab] = useState("info");
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [showReminderForm, setShowReminderForm] = useState(false);
+  const [editingReminder, setEditingReminder] = useState(null);
+  const [savingReminder, setSavingReminder] = useState(false);
+  const [sendingReminderId, setSendingReminderId] = useState(null);
 
   const blankJob = {
     title: "", description: "", status: "Scheduled", priority: "Medium",
@@ -645,6 +661,17 @@ export default function SchedulingPage({
     recurs: "Never",
   };
   const [form, setForm] = useState(blankJob);
+
+  const blankReminder = useMemo(() => ({
+    reminderName: "",
+    recurrenceInterval: "Annually",
+    customMonths: 1,
+    nextDueDate: fmtDate(today),
+    messageToCustomer: "Hi [Name], it is time to book your [Reminder Name] with [Business Name]. Click here to request a booking: [link]",
+    sendVia: "Email",
+    status: "Active",
+  }), [today]);
+  const [reminderForm, setReminderForm] = useState(blankReminder);
 
   const clientMap = useMemo(() => Object.fromEntries(clients.map(c => [String(c.id), c])), [clients]);
   const propertyMap = useMemo(() => Object.fromEntries(properties.map(p => [String(p.id), p])), [properties]);
@@ -673,6 +700,131 @@ export default function SchedulingPage({
       : `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
     window.open(url, "_blank");
   };
+
+  const reminderSendViaLabelToValue = (label) => {
+    const key = String(label || "").toLowerCase();
+    if (key === "sms") return "sms";
+    if (key === "both") return "both";
+    return "email";
+  };
+
+  const reminderSendViaValueToLabel = (value) => {
+    const key = String(value || "").toLowerCase();
+    if (key === "sms") return "SMS";
+    if (key === "both") return "Both";
+    return "Email";
+  };
+
+  const getClientReminderContact = (clientId) => {
+    const client = clientMap[String(clientId)];
+    return {
+      email: String(client?.email || "").trim(),
+      mobile: String(client?.mobile || client?.phone || client?.phoneNumber || "").trim(),
+    };
+  };
+
+  const openReminderCreateForJob = (job) => {
+    if (!job?.clientId) {
+      alert("This job has no linked contact. Link a contact first.");
+      return;
+    }
+    const reminderName = `${job.title || "Service"} Due`;
+    setEditingReminder(null);
+    setReminderForm({
+      ...blankReminder,
+      reminderName,
+      nextDueDate: job.completedDate ? String(job.completedDate).slice(0, 10) : fmtDate(today),
+      linkedJobId: String(job.id),
+      linkedJobTitle: job.title || "",
+      linkedJobType: job.jobType || job.title || "",
+      clientId: String(job.clientId),
+      clientName: getClientName(job.clientId),
+      messageToCustomer: "Hi [Name], it is time to book your [Reminder Name] with [Business Name]. Click here to request a booking: [link]",
+    });
+    setShowReminderForm(true);
+  };
+
+  const openReminderEdit = (reminder) => {
+    setEditingReminder(reminder);
+    setReminderForm({
+      ...blankReminder,
+      ...reminder,
+      sendVia: reminderSendViaValueToLabel(reminder.sendVia),
+      recurrenceInterval: reminder.recurrenceInterval || "Annually",
+      customMonths: Number(reminder.customMonths || 1),
+    });
+    setShowReminderForm(true);
+  };
+
+  const persistReminder = async () => {
+    if (!saveRecurringReminder) return;
+    const reminderName = String(reminderForm.reminderName || "").trim();
+    if (!reminderName) {
+      alert("Reminder name is required.");
+      return;
+    }
+    if (!reminderForm.clientId) {
+      alert("A linked contact is required.");
+      return;
+    }
+    if (!reminderForm.nextDueDate) {
+      alert("Next due date is required.");
+      return;
+    }
+
+    setSavingReminder(true);
+    try {
+      const payload = {
+        ...reminderForm,
+        id: editingReminder?.id || reminderForm.id,
+        reminderName,
+        recurrenceInterval: reminderForm.recurrenceInterval || "Annually",
+        customMonths: recurrenceMonths(reminderForm.recurrenceInterval, reminderForm.customMonths),
+        sendVia: reminderSendViaLabelToValue(reminderForm.sendVia),
+        status: reminderForm.status || "Active",
+        createdAt: editingReminder?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const saved = await saveRecurringReminder(payload);
+      if (saved) {
+        setShowReminderForm(false);
+        setEditingReminder(null);
+      }
+    } finally {
+      setSavingReminder(false);
+    }
+  };
+
+  const toggleReminderPaused = async (reminder) => {
+    if (!saveRecurringReminder) return;
+    const next = { ...reminder, status: reminder.status === "Paused" ? "Active" : "Paused", updatedAt: new Date().toISOString() };
+    await saveRecurringReminder(next, { silent: true });
+  };
+
+  const handleReminderDelete = (reminder) => {
+    if (!deleteRecurringReminder) return;
+    confirm({
+      title: "Delete recurring reminder",
+      message: `Delete "${reminder.reminderName}"? This cannot be undone.`,
+      onConfirm: () => deleteRecurringReminder(reminder.id),
+    });
+  };
+
+  const handleSendReminderNow = async (reminder) => {
+    if (!sendRecurringReminderNow) return;
+    setSendingReminderId(reminder.id);
+    try {
+      await sendRecurringReminderNow(reminder.id);
+    } finally {
+      setSendingReminderId(null);
+    }
+  };
+
+  const reminderRows = useMemo(() => {
+    return [...(Array.isArray(recurringReminders) ? recurringReminders : [])]
+      .sort((a, b) => String(a.nextDueDate || "").localeCompare(String(b.nextDueDate || "")));
+  }, [recurringReminders]);
 
   /* ── filter + search ─────────────────────────────────────── */
   const filtered = useMemo(() => {
@@ -1122,6 +1274,66 @@ export default function SchedulingPage({
         {view === "list" && <ListView />}
       </div>
 
+      <SectionCard title="Recurring Reminders">
+        {reminderRows.length === 0 ? (
+          <EmptyState title="No recurring reminders yet" subtitle="Open a completed job and click Set Recurring Reminder." />
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Customer</th>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Reminder</th>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Last Sent</th>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Next Due</th>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Status</th>
+                  <th style={{ textAlign: "left", fontSize: 12, color: colours.muted, borderBottom: "1px solid #E2E8F0", padding: "8px 10px" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reminderRows.map((rem) => {
+                  const status = String(rem.status || "Active");
+                  const badgeStyle = status === "Paused"
+                    ? { background: "#FEF3C7", color: "#92400E" }
+                    : status === "Unable to send"
+                      ? { background: "#FEE2E2", color: "#991B1B" }
+                      : { background: "#DCFCE7", color: "#166534" };
+                  const canSendNow = status !== "Paused";
+                  const contact = getClientReminderContact(rem.clientId);
+                  return (
+                    <tr key={rem.id}>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: colours.text }}>{rem.clientName || getClientName(rem.clientId)}</div>
+                        <div style={{ fontSize: 11, color: colours.muted }}>{contact.email || contact.mobile || "No contact details"}</div>
+                      </td>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px" }}>
+                        <div style={{ fontSize: 13, color: colours.text, fontWeight: 600 }}>{rem.reminderName}</div>
+                        <div style={{ fontSize: 11, color: colours.muted }}>{rem.recurrenceInterval}{rem.recurrenceInterval === "Custom" ? ` (${rem.customMonths} months)` : ""}</div>
+                      </td>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px", fontSize: 12, color: colours.text }}>{rem.lastSentDate || (rem.lastSentAt ? fmtDateAU(String(rem.lastSentAt).slice(0, 10)) : "Not sent yet")}</td>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px", fontSize: 12, color: colours.text }}>{rem.nextDueDate ? fmtDateAU(rem.nextDueDate) : "—"}</td>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 99, padding: "4px 10px", ...badgeStyle }}>{status}</span>
+                      </td>
+                      <td style={{ borderBottom: "1px solid #F1F5F9", padding: "10px" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button style={{ ...buttonSecondary, fontSize: 11, padding: "5px 10px" }} onClick={() => openReminderEdit(rem)}>Edit</button>
+                          <button style={{ ...buttonSecondary, fontSize: 11, padding: "5px 10px" }} onClick={() => toggleReminderPaused(rem)}>{status === "Paused" ? "Resume" : "Pause"}</button>
+                          <button style={{ ...buttonSecondary, fontSize: 11, padding: "5px 10px", opacity: canSendNow ? 1 : 0.5 }} onClick={() => handleSendReminderNow(rem)} disabled={!canSendNow || sendingReminderId === rem.id}>
+                            {sendingReminderId === rem.id ? "Sending..." : "Send Now"}
+                          </button>
+                          <button style={{ ...buttonSecondary, fontSize: 11, padding: "5px 10px", color: "#B91C1C", borderColor: "#FCA5A5" }} onClick={() => handleReminderDelete(rem)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
       {/* ═══ JOB DETAIL PANEL ═══ */}
       {detailJob && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", justifyContent: "flex-end" }} onClick={() => { setDetailJob(null); setDetailTab("info"); }}>
@@ -1208,6 +1420,14 @@ export default function SchedulingPage({
                 <button style={buttonPrimary} onClick={() => openEdit(detailJob)}>Edit Job</button>
                 <button style={{ ...buttonSecondary, color: "#C62828" }} onClick={() => handleDelete(detailJob)}>Delete</button>
                 <button style={buttonSecondary} onClick={() => setDetailTab("costs")}>View Costs</button>
+                {detailJob.status === "Completed" && detailJob.clientId && (
+                  <button
+                    style={{ ...buttonSecondary, color: "#6A1B9A", borderColor: "#6A1B9A" }}
+                    onClick={() => openReminderCreateForJob(detailJob)}
+                  >
+                    Set Recurring Reminder
+                  </button>
+                )}
                 {getJobAddress(detailJob) && (
                   <button style={{ ...buttonSecondary, color: "#1565C0", borderColor: "#1565C0" }} onClick={() => openNavigation(getJobAddress(detailJob))}>
                     📍 Navigate to Site
@@ -1317,6 +1537,90 @@ export default function SchedulingPage({
       )}
 
       {/* ═══ JOB FORM MODAL ═══ */}
+      {showReminderForm && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "rgba(0,0,0,0.35)", position: "absolute", inset: 0 }} onClick={() => { setShowReminderForm(false); setEditingReminder(null); }} />
+          <div style={{ position: "relative", background: "#fff", borderRadius: 18, padding: 28, width: 640, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: colours.text, marginBottom: 8 }}>{editingReminder ? "Edit Recurring Reminder" : "Set Recurring Reminder"}</h2>
+            <p style={{ margin: 0, fontSize: 13, color: colours.muted, lineHeight: 1.6 }}>
+              Create automatic customer reminders for future maintenance and service work.
+            </p>
+
+            <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
+              <div>
+                <label style={labelStyle}>Reminder Name</label>
+                <input style={inputStyle} value={reminderForm.reminderName || ""} onChange={(e) => setReminderForm((prev) => ({ ...prev, reminderName: e.target.value }))} placeholder="e.g. Annual Service Due" />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Recurrence Interval</label>
+                  <select style={inputStyle} value={reminderForm.recurrenceInterval || "Annually"} onChange={(e) => setReminderForm((prev) => ({ ...prev, recurrenceInterval: e.target.value }))}>
+                    {REMINDER_RECURRENCE_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Next Due Date</label>
+                  <input type="date" style={inputStyle} value={reminderForm.nextDueDate || ""} onChange={(e) => setReminderForm((prev) => ({ ...prev, nextDueDate: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Send Via</label>
+                  <select style={inputStyle} value={reminderForm.sendVia || "Email"} onChange={(e) => setReminderForm((prev) => ({ ...prev, sendVia: e.target.value }))}>
+                    <option value="Email">Email</option>
+                    <option value="SMS">SMS</option>
+                    <option value="Both">Both</option>
+                  </select>
+                </div>
+              </div>
+
+              {reminderForm.recurrenceInterval === "Custom" && (
+                <div>
+                  <label style={labelStyle}>Custom Frequency (months)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    style={inputStyle}
+                    value={reminderForm.customMonths || 1}
+                    onChange={(e) => setReminderForm((prev) => ({ ...prev, customMonths: Math.max(1, Number(e.target.value || 1)) }))}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={labelStyle}>Message to Customer</label>
+                <textarea
+                  style={{ ...inputStyle, minHeight: 110 }}
+                  value={reminderForm.messageToCustomer || ""}
+                  onChange={(e) => setReminderForm((prev) => ({ ...prev, messageToCustomer: e.target.value }))}
+                  placeholder="Use placeholders [Name], [Reminder Name], [Business Name], [link]"
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>Linked Contact</label>
+                  <input style={{ ...inputStyle, background: "#F8FAFC" }} value={reminderForm.clientName || getClientName(reminderForm.clientId)} readOnly />
+                </div>
+                <div>
+                  <label style={labelStyle}>Reminder Status</label>
+                  <select style={inputStyle} value={reminderForm.status || "Active"} onChange={(e) => setReminderForm((prev) => ({ ...prev, status: e.target.value }))}>
+                    <option value="Active">Active</option>
+                    <option value="Paused">Paused</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <button style={buttonSecondary} onClick={() => { setShowReminderForm(false); setEditingReminder(null); }}>Cancel</button>
+              <button style={{ ...buttonPrimary, opacity: savingReminder ? 0.7 : 1 }} onClick={persistReminder} disabled={savingReminder}>
+                {savingReminder ? "Saving..." : "Save Reminder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ background: "rgba(0,0,0,0.35)", position: "absolute", inset: 0 }} onClick={closeForm} />

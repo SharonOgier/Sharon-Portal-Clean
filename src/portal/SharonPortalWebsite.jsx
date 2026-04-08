@@ -183,6 +183,7 @@ export default function AccountingPortalPrototype() {
   const [assets, setAssets] = useState([]);
   const [properties, setProperties] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [recurringReminders, setRecurringReminders] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -473,6 +474,7 @@ export default function AccountingPortalPrototype() {
     setIncomeSources([]);
     setServices([]);
     setDocuments([]);
+    setRecurringReminders([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -879,11 +881,12 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
         safeF(SUPABASE_TABLES.assets), safeF(SUPABASE_TABLES.properties), safeF(SUPABASE_TABLES.jobs),
+        safeF(SUPABASE_TABLES.recurringReminders),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -901,6 +904,7 @@ export default function AccountingPortalPrototype() {
       setAssets(Array.isArray(rAssets) ? rAssets : []);
       setProperties(Array.isArray(rProperties) ? rProperties : []);
       setJobs(Array.isArray(rJobs) ? rJobs : []);
+      setRecurringReminders(Array.isArray(rRecurringReminders) ? rRecurringReminders : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1265,6 +1269,50 @@ export default function AccountingPortalPrototype() {
     } catch (err) { toast.error(err.message || "Failed to delete job"); }
   };
 
+  const saveRecurringReminder = async (payload, opts = {}) => {
+    try {
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.recurringReminders, payload);
+      setRecurringReminders((prev) => {
+        const exists = prev.find((r) => String(r.id) === String(saved.id));
+        return exists
+          ? prev.map((r) => (String(r.id) === String(saved.id) ? saved : r))
+          : [...prev, saved];
+      });
+      if (!opts.silent) {
+        toast.success(payload?.id ? "Recurring reminder updated!" : "Recurring reminder created!");
+      }
+      return saved;
+    } catch (err) {
+      toast.error(err.message || "Failed to save recurring reminder");
+      return null;
+    }
+  };
+
+  const deleteRecurringReminder = async (id) => {
+    try {
+      await deleteRecordFromDatabase(SUPABASE_TABLES.recurringReminders, id);
+      setRecurringReminders((prev) => prev.filter((r) => String(r.id) !== String(id)));
+      toast.success("Recurring reminder deleted");
+    } catch (err) {
+      toast.error(err.message || "Failed to delete recurring reminder");
+    }
+  };
+
+  const sendRecurringReminderNow = async (reminderId) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("send-recurring-reminders", {
+        body: { action: "send_now", reminderId },
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error || data?.outcome?.message || "Send now failed");
+      toast.success("Reminder sent");
+      return true;
+    } catch (err) {
+      toast.error(err.message || "Failed to send reminder");
+      return false;
+    }
+  };
+
   const validateClientPayload = (payload) =>
     collectValidationErrors(
       !String(payload?.name || "").trim() && "Client name is required.",
@@ -1399,6 +1447,7 @@ export default function AccountingPortalPrototype() {
       setIncomeSources([]);
       setServices([]);
       setDocuments([]);
+      setRecurringReminders([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -1919,6 +1968,7 @@ export default function AccountingPortalPrototype() {
         { name: "services",      items: services,      table: SUPABASE_TABLES.services },
         { name: "documents",     items: documents,     table: SUPABASE_TABLES.documents },
         { name: "suppliers",     items: suppliers,     table: SUPABASE_TABLES.suppliers },
+        { name: "recurring reminders", items: recurringReminders, table: SUPABASE_TABLES.recurringReminders },
       ];
 
       const saveResults = await Promise.all(
@@ -1969,6 +2019,7 @@ export default function AccountingPortalPrototype() {
         remoteAssets,
         remoteProperties,
         remoteJobs,
+        remoteRecurringReminders,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -1982,6 +2033,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.assets),
         safeF(SUPABASE_TABLES.properties),
         safeF(SUPABASE_TABLES.jobs),
+        safeF(SUPABASE_TABLES.recurringReminders),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2025,6 +2077,7 @@ export default function AccountingPortalPrototype() {
       setAssets(Array.isArray(remoteAssets) ? remoteAssets : []);
       setProperties(Array.isArray(remoteProperties) ? remoteProperties : []);
       setJobs(Array.isArray(remoteJobs) ? remoteJobs : []);
+      setRecurringReminders(Array.isArray(remoteRecurringReminders) ? remoteRecurringReminders : []);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2101,6 +2154,7 @@ export default function AccountingPortalPrototype() {
       sas_assets:          { setter: setAssets,          key: "assets" },
       sas_properties:      { setter: setProperties,     key: "properties" },
       sas_profile:         { setter: null,               key: "profile" },
+      sas_recurring_reminders: { setter: setRecurringReminders, key: "scheduling" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2180,6 +2234,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_assets",         filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_properties",     filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_profile",        filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_recurring_reminders", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5153,13 +5208,17 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
             />}
             {activePage === "scheduling" && <SchedulingPage
               jobs={jobs} clients={clients} properties={properties}
+              recurringReminders={recurringReminders}
               quotes={quotes} invoices={invoices}
               colours={colours} cardStyle={cardStyle}
               buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
               inputStyle={inputStyle} labelStyle={labelStyle}
               DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
               SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
-               saveJob={saveJob} deleteJob={deleteJob} confirm={confirm}
+              saveJob={saveJob} deleteJob={deleteJob} confirm={confirm}
+              saveRecurringReminder={saveRecurringReminder}
+              deleteRecurringReminder={deleteRecurringReminder}
+              sendRecurringReminderNow={sendRecurringReminderNow}
                setActivePage={setActivePage} currency={currency}
                authUser={authUser} profile={profile}
                createInvoiceFromJob={createInvoiceFromJob}

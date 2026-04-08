@@ -255,6 +255,7 @@ export const SUPABASE_TABLES = {
   assets: "sas_assets",
   properties: "sas_properties",
   jobs: "sas_jobs",
+  recurringReminders: "sas_recurring_reminders",
 };
 
 export const SUPABASE_SCHEMA_SQL = `-- Run this once in Supabase SQL Editor
