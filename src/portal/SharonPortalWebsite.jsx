@@ -96,6 +96,7 @@ import ExpensesPage         from "./pages/ExpensesPage";
 import AssetsPage           from "./pages/AssetsPage";
 import PropertiesPage       from "./pages/PropertiesPage";
 import ChemicalRecordsPage  from "./pages/ChemicalRecordsPage";
+import LivestockPage        from "./pages/LivestockPage";
 import SchedulingPage       from "./pages/SchedulingPage";
 import JobsReportPage       from "./pages/JobsReportPage";
 import IncomeSourcesPage    from "./pages/IncomeSourcesPage";
@@ -131,6 +132,7 @@ export default function AccountingPortalPrototype() {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ];
   const PADDOCK_EVENT_QUEUE_KEY = "sas_pending_paddock_events";
+  const LIVESTOCK_QUEUE_KEY = "sas_pending_livestock_records";
 
   const getMimeTypeFromFile = (file) => {
     const explicitType = String(file?.type || "").trim().toLowerCase();
@@ -189,6 +191,7 @@ export default function AccountingPortalPrototype() {
   const [supplierPriceLists, setSupplierPriceLists] = useState([]);
   const [chemicalRecords, setChemicalRecords] = useState([]);
   const [paddockEvents, setPaddockEvents] = useState([]);
+  const [livestockRecords, setLivestockRecords] = useState([]);
   const [subcontractorCosts, setSubcontractorCosts] = useState([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
@@ -482,6 +485,7 @@ export default function AccountingPortalPrototype() {
     setSupplierPriceLists([]);
     setChemicalRecords([]);
     setPaddockEvents([]);
+    setLivestockRecords([]);
     setSuppliers([]);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem("sas_profile");
@@ -492,6 +496,8 @@ export default function AccountingPortalPrototype() {
       window.localStorage.removeItem("sas_incomeSources");
       window.localStorage.removeItem("sas_services");
       window.localStorage.removeItem("sas_documents");
+      window.localStorage.removeItem(PADDOCK_EVENT_QUEUE_KEY);
+      window.localStorage.removeItem(LIVESTOCK_QUEUE_KEY);
     }
   };
 
@@ -873,7 +879,7 @@ export default function AccountingPortalPrototype() {
     try {
       const uid = targetUserId;
       const safeF = (table) => fetchCollectionFromDatabase(table, uid).catch(() => []);
-      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents] = await Promise.all([
+      const [rProfile, rClients, rInvoices, rQuotes, rExpenses, rIncome, rServices, rDocs, rSuppliers, rAssets, rProperties, rJobs, rRecurringReminders, rSupplierPriceLists, rChemicalRecords, rPaddockEvents, rLivestockRecords] = await Promise.all([
         safeF(SUPABASE_TABLES.profile), safeF(SUPABASE_TABLES.clients), safeF(SUPABASE_TABLES.invoices),
         safeF(SUPABASE_TABLES.quotes), safeF(SUPABASE_TABLES.expenses), safeF(SUPABASE_TABLES.incomeSources),
         safeF(SUPABASE_TABLES.services), safeF(SUPABASE_TABLES.documents), safeF(SUPABASE_TABLES.suppliers),
@@ -882,6 +888,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.supplierPriceLists),
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
+        safeF(SUPABASE_TABLES.livestockRecords),
       ]);
       const remoteProfile = Array.isArray(rProfile) && rProfile.length
         ? [...rProfile].reverse().find(r => Boolean(r?.setupComplete ?? r?.data?.setupComplete)) || rProfile[rProfile.length - 1]
@@ -903,6 +910,7 @@ export default function AccountingPortalPrototype() {
       setSupplierPriceLists(Array.isArray(rSupplierPriceLists) ? rSupplierPriceLists : []);
       setChemicalRecords(Array.isArray(rChemicalRecords) ? rChemicalRecords : []);
       setPaddockEvents(Array.isArray(rPaddockEvents) ? rPaddockEvents : []);
+      setLivestockRecords(Array.isArray(rLivestockRecords) ? rLivestockRecords : []);
       setActivePage("dashboard");
     } catch (err) { console.error("Switch user failed:", err); }
     setIsSupabaseRestoring(false);
@@ -1508,6 +1516,93 @@ export default function AccountingPortalPrototype() {
     }
   };
 
+  const readPendingLivestockQueue = () => {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(LIVESTOCK_QUEUE_KEY);
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writePendingLivestockQueue = (items) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    window.localStorage.setItem(LIVESTOCK_QUEUE_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+  };
+
+  const upsertLivestockInState = (items, nextItem) => {
+    const list = Array.isArray(items) ? items : [];
+    const byId = list.findIndex((row) => String(row.id) === String(nextItem.id));
+    if (byId >= 0) {
+      const copy = [...list];
+      copy[byId] = nextItem;
+      return copy;
+    }
+    return [...list, nextItem];
+  };
+
+  const flushPendingLivestockQueue = async () => {
+    const queue = readPendingLivestockQueue();
+    if (!queue.length) return;
+    const remaining = [];
+    for (const item of queue) {
+      try {
+        const toSave = { ...item };
+        if (!isValidDbId(toSave.id)) delete toSave.id;
+        const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, toSave);
+        setLivestockRecords((prev) => upsertLivestockInState(prev, { ...saved, pendingSync: false }));
+      } catch (err) {
+        remaining.push(item);
+        if (!(String(err?.message || "").toLowerCase().includes("network"))) {
+          console.warn("Could not sync pending livestock record:", err?.message);
+        }
+      }
+    }
+    writePendingLivestockQueue(remaining);
+  };
+
+  const saveLivestockRecord = async (payload, opts = {}) => {
+    const prepared = {
+      ...payload,
+      archived: Boolean(payload?.archived),
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      const saved = await upsertRecordInDatabase(SUPABASE_TABLES.livestockRecords, prepared);
+      setLivestockRecords((prev) => upsertLivestockInState(prev, { ...saved, pendingSync: false }));
+      if (!opts.silent) {
+        toast.success(payload?.id ? "Livestock record updated!" : "Livestock record saved!");
+      }
+      return { ...saved, pendingSync: false };
+    } catch (_err) {
+      const fallback = {
+        ...prepared,
+        id: prepared.id || `offline-livestock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        pendingSync: true,
+      };
+      setLivestockRecords((prev) => upsertLivestockInState(prev, fallback));
+      writePendingLivestockQueue(upsertLivestockInState(readPendingLivestockQueue(), fallback));
+      if (!opts.silent) toast.success("Saved offline. Will sync when back online.");
+      return fallback;
+    }
+  };
+
+  const archiveLivestockRecord = async (id) => {
+    try {
+      const existing = livestockRecords.find((row) => String(row.id) === String(id));
+      if (!existing) return false;
+      const saved = await saveLivestockRecord({ ...existing, archived: true, archivedAt: new Date().toISOString() }, { silent: true });
+      if (!saved) return false;
+      toast.success("Livestock record archived");
+      return true;
+    } catch (err) {
+      toast.error(err.message || "Failed to archive livestock record");
+      return false;
+    }
+  };
+
   const sendRecurringReminderNow = async (reminderId) => {
     try {
       const { data, error } = await supabase.functions.invoke("send-recurring-reminders", {
@@ -1661,6 +1756,7 @@ export default function AccountingPortalPrototype() {
       setSupplierPriceLists([]);
       setChemicalRecords([]);
       setPaddockEvents([]);
+      setLivestockRecords([]);
       setSetupComplete(false);
       setHasLoadedUserProfile(false);
       setWizardForm({
@@ -2185,6 +2281,7 @@ export default function AccountingPortalPrototype() {
         { name: "supplier price lists", items: supplierPriceLists, table: SUPABASE_TABLES.supplierPriceLists },
         { name: "chemical records", items: chemicalRecords, table: SUPABASE_TABLES.chemicalRecords },
         { name: "paddock events", items: paddockEvents, table: SUPABASE_TABLES.paddockEvents },
+        { name: "livestock records", items: livestockRecords, table: SUPABASE_TABLES.livestockRecords },
       ];
 
       const saveResults = await Promise.all(
@@ -2239,6 +2336,7 @@ export default function AccountingPortalPrototype() {
         remoteSupplierPriceLists,
         remoteChemicalRecords,
         remotePaddockEvents,
+        remoteLivestockRecords,
       ] = await Promise.all([
         safeF(SUPABASE_TABLES.profile),
         safeF(SUPABASE_TABLES.clients),
@@ -2256,6 +2354,7 @@ export default function AccountingPortalPrototype() {
         safeF(SUPABASE_TABLES.supplierPriceLists),
         safeF(SUPABASE_TABLES.chemicalRecords),
         safeF(SUPABASE_TABLES.paddockEvents),
+        safeF(SUPABASE_TABLES.livestockRecords),
       ]);
       hasHydratedSupabaseState.current = true;
 
@@ -2309,6 +2408,13 @@ export default function AccountingPortalPrototype() {
         hydratedPaddockEvents
       );
       setPaddockEvents(mergedPaddockEvents);
+      const pendingOfflineLivestock = readPendingLivestockQueue();
+      const hydratedLivestock = Array.isArray(remoteLivestockRecords) ? remoteLivestockRecords : [];
+      const mergedLivestock = pendingOfflineLivestock.reduce(
+        (acc, item) => upsertLivestockInState(acc, item),
+        hydratedLivestock
+      );
+      setLivestockRecords(mergedLivestock);
       setSetupComplete(nextSetupComplete);
       setWizardForm((prev) => ({ ...prev,
         firstName: nextProfile.firstName || "",
@@ -2353,6 +2459,7 @@ export default function AccountingPortalPrototype() {
       // Auto-resync data when coming back online
       if (authUser && hasHydratedSupabaseState.current) {
         flushPendingPaddockEventQueue();
+        flushPendingLivestockQueue();
         restorePortalStateFromSupabase();
       }
       setTimeout(() => setShowBackOnline(false), 4000);
@@ -2390,6 +2497,7 @@ export default function AccountingPortalPrototype() {
       sas_supplier_price_lists: { setter: setSupplierPriceLists, key: "settings" },
       sas_chemical_records: { setter: setChemicalRecords, key: "chemical records" },
       sas_paddock_events: { setter: setPaddockEvents, key: "properties" },
+      sas_livestock_records: { setter: setLivestockRecords, key: "livestock" },
       sas_team_members:    { setter: setTeamMembers,     key: "settings" },
       sas_team_invitations:{ setter: setTeamInvitations, key: "settings" },
       sas_subcontractor_costs: { setter: setSubcontractorCosts, key: "jobs report" },
@@ -2473,6 +2581,7 @@ export default function AccountingPortalPrototype() {
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_supplier_price_lists", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_chemical_records", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_paddock_events", filter: `user_id=eq.${uid}` }, handleChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sas_livestock_records", filter: `user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_members",   filter: `owner_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_team_invitations", filter: `inviter_user_id=eq.${uid}` }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "sas_subcontractor_costs", filter: `job_owner_user_id=eq.${uid}` }, handleChange)
@@ -5495,6 +5604,20 @@ body { font-family: Arial, sans-serif; padding: 40px; color: #14202B; }
               archiveChemicalRecord={archiveChemicalRecord}
               formatDateAU={formatDateAU}
               safeNumber={safeNumber}
+              confirm={confirm}
+            />}
+            {activePage === "livestock" && <LivestockPage
+              livestockRecords={livestockRecords}
+              properties={properties}
+              chemicalRecords={chemicalRecords}
+              colours={colours} cardStyle={cardStyle}
+              buttonPrimary={buttonPrimary} buttonSecondary={buttonSecondary}
+              inputStyle={inputStyle} labelStyle={labelStyle}
+              DashboardHero={DashboardHero} InsightChip={InsightChip} MetricCard={MetricCard}
+              SectionCard={SectionCard} DataTable={DataTable} EmptyState={EmptyState}
+              saveLivestockRecord={saveLivestockRecord}
+              archiveLivestockRecord={archiveLivestockRecord}
+              formatDateAU={formatDateAU}
               confirm={confirm}
             />}
             {activePage === "scheduling" && <SchedulingPage
