@@ -107,8 +107,9 @@ export default function ClientPortalPage() {
         setJobs(json.jobs || []);
         setInvoices(json.invoices || []);
         setQuotes(json.quotes || []);
-      } catch (e: any) {
-        setError(e.message || "Failed to load portal.");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Failed to load portal.";
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -129,8 +130,9 @@ export default function ClientPortalPage() {
       setSubmitSuccess(json.message);
       setRequestForm({ title: "", description: "", preferredDate: "", preferredTime: "", address: "" });
       setActiveTab("jobs");
-    } catch (e: any) {
-      setError(e.message || "Failed to submit.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to submit.";
+      setError(message);
     } finally {
       setSubmitting(false);
     }

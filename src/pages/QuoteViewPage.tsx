@@ -83,8 +83,9 @@ export default function QuoteViewPage() {
         setQuote(json.quote);
         setBusiness(json.business);
         setClient(json.client);
-      } catch (e: any) {
-        setError(e.message || "Failed to load quote.");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Failed to load quote.";
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -126,8 +127,9 @@ export default function QuoteViewPage() {
           convertedToJobId: json.jobId || quote.convertedToJobId,
         });
       }
-    } catch (e: any) {
-      setError(e.message || "Failed to respond.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to respond.";
+      setError(message);
     } finally {
       setResponding(false);
       setShowDeclineConfirm(false);

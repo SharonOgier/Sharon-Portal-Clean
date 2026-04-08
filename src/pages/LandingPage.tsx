@@ -2,17 +2,28 @@ import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { TIERS, TIER_ORDER } from "../portal/tierConfig";
 
+type TierWithOptionalFields = {
+  key: string;
+  label: string;
+  price: number;
+  tag: string;
+  features: string[];
+  lockedFeatures?: string[];
+  recommended?: boolean;
+  comingSoon?: string[];
+};
+
 const tiers = TIER_ORDER.map((key) => {
-  const t = TIERS[key as keyof typeof TIERS];
+  const t = TIERS[key as keyof typeof TIERS] as TierWithOptionalFields;
   return {
     key: t.key,
     name: t.label,
     price: t.price,
     tag: t.tag,
-    recommended: !!(t as any).recommended,
+    recommended: !!t.recommended,
     features: t.features,
     locked: t.lockedFeatures || [],
-    comingSoon: (t as any).comingSoon || [],
+    comingSoon: t.comingSoon || [],
   };
 });
 

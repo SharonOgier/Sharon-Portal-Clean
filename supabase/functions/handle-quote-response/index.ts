@@ -188,7 +188,7 @@ serve(async (req: Request) => {
 
       const newStatus = action === "accept" ? "Accepted" : "Declined";
       const responseAt = new Date().toISOString();
-      let updatedData = {
+      const updatedData = {
         ...quoteData,
         status: newStatus,
         respondedAt: responseAt,

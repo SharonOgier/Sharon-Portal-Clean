@@ -870,6 +870,7 @@ export default function SettingsPage(props) {
                   <li>They'll see only their assigned jobs and can submit costs with receipts</li>
                 </ol>
               </div>
+            </div>
           </div>
         )}
 
