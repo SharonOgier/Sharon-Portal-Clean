@@ -52,6 +52,9 @@ export default function DashboardPage(props) {
     saveAllCurrentStateToSupabase = () => {},
     supabaseSyncStatus = "",
     getClientName = () => "",
+    chemicalRecords = [],
+    livestockRecords = [],
+    todayLocal = () => new Date().toISOString().slice(0, 10),
   } = props;
 
   const { businessType, t } = useTerminology();
@@ -171,7 +174,7 @@ export default function DashboardPage(props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
             <ActionHubCard icon="🏡" title={t("properties")} description={`${(props.properties || []).length || 0} registered`} buttonLabel={`View ${t("properties").toLowerCase()}`} onClick={() => setActivePage("properties")} tone={colours.teal} />
             <ActionHubCard icon="📋" title={`Active ${t("jobs")}`} description="Seasonal tasks and ongoing work" buttonLabel={`View ${t("workPlanner")}`} onClick={() => setActivePage("scheduling")} tone={colours.purple} />
-            <ActionHubCard icon="🤝" title={t("subcontractors")} description={`${clients.filter(c => (c.roles || []).includes("subcontractor")).length} active`} buttonLabel={`View ${t("subcontractors").toLowerCase()}`} onClick={() => setActivePage("clients")} tone="#EA580C" />
+            <ActionHubCard icon="🛡️" title="Compliance" description={`${chemicalRecords.filter(r => !r.archived && r.withholdingEndDate >= new Date().toISOString().slice(0, 10)).length} active WHP`} buttonLabel="View dashboard" onClick={() => setActivePage("compliance")} tone="#EA580C" />
           </div>
         </SectionCard>
       )}
@@ -323,6 +326,31 @@ export default function DashboardPage(props) {
         <TrendBarsCard title="Expense categories" subtitle="Largest categories from recorded expenses" data={resolvedExpenseCategoryRows} valueKey="value" formatValue={(value) => currency(value)} accent={colours.purple} emptyText="No expenses recorded yet." />
         <TrendBarsCard title="Invoice status mix" subtitle="A quick collections snapshot" data={resolvedInvoiceStatusRows} valueKey="value" formatValue={(value) => `${value} item${value === 1 ? "" : "s"}`} accent={colours.navy} emptyText="No invoices yet." />
       </div>
+
+      {businessType === "farmer" && (
+        <SectionCard title="🛡️ Compliance Status" right={<button style={{ fontSize: 12, color: colours.purple, fontWeight: 700, background: "none", border: "none", cursor: "pointer" }} onClick={() => setActivePage("compliance")}>View dashboard →</button>}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+            <MetricCard
+              title="Chemical WHP"
+              value={chemicalRecords.filter(r => !r.archived && r.withholdingEndDate >= todayLocal()).length > 0 ? "❌ Restricted" : "✔ Clear"}
+              subtitle="Paddock withholding status"
+              accent={chemicalRecords.filter(r => !r.archived && r.withholdingEndDate >= todayLocal()).length > 0 ? "#DC2626" : colours.teal}
+            />
+            <MetricCard
+              title="Livestock WHP/ESI"
+              value={livestockRecords.filter(r => !r.archived && r.kind === "treatment" && r.withholdingEndDate >= todayLocal()).length > 0 ? "❌ Restricted" : "✔ Clear"}
+              subtitle="Mob withholding status"
+              accent={livestockRecords.filter(r => !r.archived && r.kind === "treatment" && r.withholdingEndDate >= todayLocal()).length > 0 ? "#DC2626" : colours.teal}
+            />
+            <MetricCard
+              title="NLIS Sale Status"
+              value={livestockRecords.filter(r => !r.archived && r.kind === "treatment" && r.withholdingEndDate >= todayLocal()).length > 0 ? "❌ Mob cannot be sold" : "✔ Ready"}
+              subtitle="Sale/Slaughter clearance"
+              accent={livestockRecords.filter(r => !r.archived && r.kind === "treatment" && r.withholdingEndDate >= todayLocal()).length > 0 ? "#DC2626" : colours.teal}
+            />
+          </div>
+        </SectionCard>
+      )}
 
       <SectionCard title="Financial reports" right={<div style={{ fontSize: 12, color: colours.muted }}>Click to expand</div>}>
         <div style={{ display: "grid", gap: 12 }}>

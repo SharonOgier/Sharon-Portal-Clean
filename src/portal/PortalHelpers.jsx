@@ -40,7 +40,7 @@ const NAV_ITEMS_BY_TYPE = {
     "tax estimator", "settings",
   ],
   tradie: ["scheduling", "assets", "properties", "jobs report"],
-  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "jobs report"],
+  farmer: ["scheduling", "assets", "properties", "chemical records", "livestock", "compliance", "jobs report"],
   smallbusiness: ["scheduling"],
 };
 
@@ -51,7 +51,7 @@ const NAV_SECTIONS_TEMPLATE = [
   },
   {
     title: "Workspace",
-    items: ["clients", "services", "assets", "properties", "chemical records", "livestock", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
+    items: ["clients", "services", "assets", "properties", "chemical records", "livestock", "compliance", "scheduling", "timesheets", "bills / payables", "income sources", "documents"],
   },
   {
     title: "Admin",
@@ -80,6 +80,7 @@ const NAV_LABELS_BASE = {
   "jobs report": "Jobs Report",
   "bas report": "BAS Report",
   "ato tax form": "ATO Tax Form",
+  compliance: "Compliance Dashboard",
   "tax estimator": "Tax Estimator",
   settings: "Settings",
 };
@@ -97,6 +98,7 @@ const NAV_LABEL_OVERRIDES = {
     assets: "Farm Assets & Depreciation",
     "chemical records": "Chemical Use Records",
     livestock: "Livestock",
+    compliance: "Compliance Dashboard",
     "jobs report": "Tasks Report",
   },
   smallbusiness: {
